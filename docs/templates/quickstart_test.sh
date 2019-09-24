@@ -1,27 +1,18 @@
-# Quickstart with firecracker-containerd
-
-This quickstart guide provides simple steps to get a working
-firecracker-containerd environment, with each of the major components built from
-source.  Once you have completed this quickstart, you should be able to run and
-develop firecracker-containerd (the components in this repository), the
-Firecracker VMM, and containerd.
-
-This quickstart will clone repositories under your `$HOME` directory and install
-files into `/usr/local/bin`.
-
-1. Get an AWS account (see
-   [this article](https://aws.amazon.com/premiumsupport/knowledge-center/create-and-activate-aws-account/)
-   if you need help creating one)
-2. Launch an i3.metal instance running Debian Stretch (you can find it in the
-   [AWS marketplace](http://deb.li/awsmp) or on [this
-   page](https://wiki.debian.org/Cloud/AmazonEC2Image/Stretch).  If you need
-   help launching an EC2 instance, see the
-   [EC2 getting started guide](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/EC2_GetStarted.html).
-3. Run the script below to download and install all the required components.
-   This script expects to be run from your `$HOME` directory.
-
-```bash
 #!/bin/bash
+set -uxeo pipefail
+
+DEBIAN_FRONTEND=noninteractive apt-get update
+DEBIAN_FRONTEND=noninteractive apt-get install --yes sudo expect
+echo "admin ALL=(ALL:ALL) NOPASSWD:ALL" >> /etc/sudoers
+useradd admin
+chown -R admin:admin /home/admin
+
+echo "exit 0" > /usr/sbin/policy-rc.d
+
+rm -rf /var/lib/docker/*
+
+su --login admin -c bash <<"ENDOFQUICKSTART"
+set -uxeo pipefail
 cd ~
 
 # Install git, Go 1.11, make, curl
@@ -62,9 +53,7 @@ cd ~
 
 # Download kernel
 curl -fsSL -o hello-vmlinux.bin https://s3.amazonaws.com/spec.ccfc.min/img/hello/kernel/hello-vmlinux.bin
-# Check out firecracker-containerd
-cd ~
-git clone https://github.com/firecracker-microvm/firecracker-containerd.git
+
 # Build firecracker-containerd.  This includes:
 # * block-device snapshotter gRPC proxy plugins
 # * firecracker-containerd runtime, a containerd v2 runtime
@@ -124,45 +113,25 @@ sudo tee /etc/containerd/firecracker-runtime.json <<EOF
   }]
 }
 EOF
-```
 
-4. Open a new terminal and start the `naive_snapshotter` program in the
-   foreground
-
-```bash
 sudo mkdir -p /var/run/firecracker-containerd /var/lib/firecracker-containerd/naive
 sudo naive_snapshotter \
      -address /var/run/firecracker-containerd/naive-snapshotter.sock \
      -path /var/lib/firecracker-containerd/naive \
-     -debug
-```
+     -debug &> ~/snapshotter.out &
 
-5. Open a new terminal and start `firecracker-containerd` in the foreground
+sudo firecracker-containerd --config /etc/firecracker-containerd/config.toml &> ~/containerd.out &
 
-```bash
-sudo firecracker-containerd --config /etc/firecracker-containerd/config.toml
-```
-
-6. Open a new terminal, pull an image, and run a container!
-
-```bash
+sleep 5 # take a nap while containerd starts
 sudo firecracker-ctr --address /run/firecracker-containerd/containerd.sock \
      image pull \
      --snapshotter firecracker-naive \
      docker.io/library/debian:latest
-sudo firecracker-ctr --address /run/firecracker-containerd/containerd.sock \
+expect -c 'spawn sudo firecracker-ctr --address /run/firecracker-containerd/containerd.sock \
      run \
      --snapshotter firecracker-naive \
      --runtime aws.firecracker \
      --tty \
      docker.io/library/debian:latest \
-     test
-```
-
-In the commands above, note the `--address` argument targeting the
-`firecracker-containerd` binary instead of the normal `containerd` binary, the
-`--snapshotter` argument targeting the block-device snapshotter, and the
-`--runtime` argument targeting the firecracker-containerd runtime.
-
-When you're done, you can stop or terminate your i3.metal EC2 instance to avoid
-incurring additional charges from EC2.
+     test ; expect "root@microvm:/# " ; send -- "exit\r" ; expect eof'
+ENDOFQUICKSTART

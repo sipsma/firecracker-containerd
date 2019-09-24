@@ -1,0 +1,27 @@
+#!/bin/bash
+set -uxeo pipefail
+
+DEBIAN_FRONTEND=noninteractive apt-get update
+DEBIAN_FRONTEND=noninteractive apt-get install --yes sudo expect
+echo "admin ALL=(ALL:ALL) NOPASSWD:ALL" >> /etc/sudoers
+useradd admin
+chown -R admin:admin /home/admin
+
+echo "exit 0" > /usr/sbin/policy-rc.d
+
+rm -rf /var/lib/docker/*
+
+su --login admin -c bash <<"ENDOFQUICKSTART"
+set -uxeo pipefail
+{{.InstallDependencies}}
+
+{{.SetupFCCD}}
+
+{{.StartSnapshotter}} &> ~/snapshotter.out &
+
+{{.StartContainerd}} &> ~/containerd.out &
+
+sleep 5 # take a nap while containerd starts
+{{.PullImage}}
+expect -c 'spawn {{.StartContainer}} ; expect "root@microvm:/# " ; send -- "exit\r" ; expect eof'
+ENDOFQUICKSTART

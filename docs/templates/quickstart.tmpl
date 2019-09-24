@@ -1,0 +1,56 @@
+# Quickstart with firecracker-containerd
+
+This quickstart guide provides simple steps to get a working
+firecracker-containerd environment, with each of the major components built from
+source.  Once you have completed this quickstart, you should be able to run and
+develop firecracker-containerd (the components in this repository), the
+Firecracker VMM, and containerd.
+
+This quickstart will clone repositories under your `$HOME` directory and install
+files into `/usr/local/bin`.
+
+1. Get an AWS account (see
+   [this article](https://aws.amazon.com/premiumsupport/knowledge-center/create-and-activate-aws-account/)
+   if you need help creating one)
+2. Launch an i3.metal instance running Debian Stretch (you can find it in the
+   [AWS marketplace](http://deb.li/awsmp) or on [this
+   page](https://wiki.debian.org/Cloud/AmazonEC2Image/Stretch).  If you need
+   help launching an EC2 instance, see the
+   [EC2 getting started guide](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/EC2_GetStarted.html).
+3. Run the script below to download and install all the required components.
+   This script expects to be run from your `$HOME` directory.
+
+```bash
+#!/bin/bash
+{{.InstallDependencies}}
+{{.CheckoutFCCD}}
+{{.SetupFCCD}}
+```
+
+4. Open a new terminal and start the `naive_snapshotter` program in the
+   foreground
+
+```bash
+{{.StartSnapshotter}}
+```
+
+5. Open a new terminal and start `firecracker-containerd` in the foreground
+
+```bash
+{{.StartContainerd}}
+```
+
+6. Open a new terminal, pull an image, and run a container!
+
+```bash
+{{.PullImage}}
+{{.StartContainer}}
+```
+
+In the commands above, note the `--address` argument targeting the
+`firecracker-containerd` binary instead of the normal `containerd` binary, the
+`--snapshotter` argument targeting the block-device snapshotter, and the
+`--runtime` argument targeting the firecracker-containerd runtime.
+
+When you're done, you can stop or terminate your i3.metal EC2 instance to avoid
+incurring additional charges from EC2.

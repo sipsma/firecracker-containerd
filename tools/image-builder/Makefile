@@ -81,7 +81,7 @@ builder_stamp:
 %-in-docker: builder_stamp
 	docker run --rm \
 		--security-opt=apparmor=unconfined \
-		-it --volume $(CURDIR):/src \
+		--tty --volume $(CURDIR):/src \
 		--cap-add=sys_admin \
 		--cap-add=sys_chroot \
 		--env=DEBMIRROR \
