@@ -21,9 +21,11 @@ $(PROTO_GEN_SRC): $(PROTO_SRC)
 
 proto: $(PROTO_GEN_SRC)
 	PROTOPATH=$(CURDIR) $(MAKE) -C service/fccontrol proto
+	PROTOPATH=$(CURDIR) $(MAKE) -C service/drivemount proto
 
 clean:
 	- rm -f $(PROTO_GEN_SRC)
 	- $(MAKE) -C service/fccontrol clean
+	- $(MAKE) -C service/drivemount clean
 
 .PHONY: clean proto

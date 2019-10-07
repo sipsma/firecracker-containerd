@@ -112,6 +112,8 @@ func networkConfigFromProto(nwIface *proto.FirecrackerNetworkInterface, vmID str
 	return result, nil
 }
 
+// TODO
+/*
 func addDriveFromProto(builder firecracker.DrivesBuilder, drive *proto.FirecrackerDrive) firecracker.DrivesBuilder {
 	opt := func(d *models.Drive) {
 		d.IsRootDevice = firecracker.Bool(drive.IsRootDevice)
@@ -124,6 +126,7 @@ func addDriveFromProto(builder firecracker.DrivesBuilder, drive *proto.Firecrack
 
 	return builder.AddDrive(drive.PathOnHost, drive.IsReadOnly, opt)
 }
+*/
 
 // rateLimiterFromProto creates a firecracker RateLimiter object from the
 // protobuf message.

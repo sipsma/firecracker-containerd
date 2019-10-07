@@ -87,10 +87,9 @@ func TestCNISupport_Isolated(t *testing.T) {
 				MachineCfg: &proto.FirecrackerMachineConfiguration{
 					MemSizeMib: 512,
 				},
-				RootDrive: &proto.FirecrackerDrive{
-					PathOnHost:   defaultVMRootfsPath,
-					IsReadOnly:   false,
-					IsRootDevice: true,
+				RootDrive: &proto.FirecrackerRootDrive{
+					HostPath:   defaultVMRootfsPath,
+					IsReadOnly: false,
 				},
 				NetworkInterfaces: []*proto.FirecrackerNetworkInterface{{
 					CNIConfig: &proto.CNIConfiguration{

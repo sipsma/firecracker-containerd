@@ -14,12 +14,20 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/containerd/containerd/log"
+	"github.com/containerd/containerd/mount"
 	"github.com/firecracker-microvm/firecracker-containerd/internal"
+	drivemount "github.com/firecracker-microvm/firecracker-containerd/proto/service/drivemount/ttrpc"
+	"github.com/golang/protobuf/ptypes/empty"
+	"github.com/pkg/errors"
 )
 
 const (
@@ -44,6 +52,8 @@ type driveHandler struct {
 	// DrivePath should contain the location of the drive block device nodes.
 	DrivePath string
 }
+
+var _ drivemount.DriveMounterService = &driveHandler{}
 
 func newDriveHandler(blockPath, drivePath string) (*driveHandler, error) {
 	d := &driveHandler{
@@ -145,4 +155,47 @@ func isStubDrive(d drive) bool {
 	defer f.Close()
 
 	return internal.IsStubDrive(f)
+}
+
+func (dh driveHandler) MountDrive(ctx context.Context, req *drivemount.MountDriveRequest) (*empty.Empty, error) {
+	logger := log.G(ctx).WithField("MountDriveRequest", req.String())
+	logger.Debug()
+
+	driveID := strings.TrimSpace(req.DriveID)
+	drive, ok := dh.GetDrive(driveID)
+	if !ok {
+		return nil, fmt.Errorf("Drive %q could not be found", driveID)
+	}
+	logger = logger.WithField("drive_path", drive.Path())
+
+	err := os.MkdirAll(req.DestinationPath, 0700)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to create drive mount destination %q", req.DestinationPath)
+	}
+
+	const (
+		maxRetries = 100
+		retryDelay = 10 * time.Millisecond
+	)
+
+	for i := 0; i < maxRetries; i++ {
+		err := mount.All([]mount.Mount{mount.Mount{
+			Source:  drive.Path(),
+			Type:    req.FilesytemType,
+			Options: req.Options,
+		}}, req.DestinationPath)
+		if err == nil {
+			return &empty.Empty{}, nil
+		}
+
+		if isRetryableMountError(err) {
+			logger.WithError(err).Warnf("retryable failure mounting drive")
+			time.Sleep(retryDelay)
+			continue
+		}
+
+		return nil, errors.Wrapf(err, "non-retryable failure mounting drive from %q to %q", drive.Path(), req.DestinationPath)
+	}
+
+	return nil, errors.Errorf("exhausted retries mounting drive from %q to %q", drive.Path(), req.DestinationPath)
 }

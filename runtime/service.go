@@ -56,6 +56,7 @@ import (
 	fcShim "github.com/firecracker-microvm/firecracker-containerd/internal/shim"
 	"github.com/firecracker-microvm/firecracker-containerd/internal/vm"
 	"github.com/firecracker-microvm/firecracker-containerd/proto"
+	drivemount "github.com/firecracker-microvm/firecracker-containerd/proto/service/drivemount/ttrpc"
 	fccontrolTtrpc "github.com/firecracker-microvm/firecracker-containerd/proto/service/fccontrol/ttrpc"
 )
 
@@ -118,6 +119,7 @@ type service struct {
 	vmStartOnce              sync.Once
 	agentClient              taskAPI.TaskService
 	eventBridgeClient        eventbridge.Getter
+	driveMountClient         drivemount.DriveMounterService
 	stubDriveHandler         *stubDriveHandler
 	exitAfterAllTasksDeleted bool // exit the VM and shim when all tasks are deleted
 
@@ -352,7 +354,7 @@ func logPanicAndDie(logger *logrus.Entry) {
 	}
 }
 
-func (s *service) generateExtraData(jsonBytes []byte, driveID *string, options *ptypes.Any) (*proto.ExtraData, error) {
+func (s *service) generateExtraData(jsonBytes []byte, options *ptypes.Any) (*proto.ExtraData, error) {
 	var opts *ptypes.Any
 	if options != nil {
 		// Copy values of existing options over
@@ -370,7 +372,6 @@ func (s *service) generateExtraData(jsonBytes []byte, driveID *string, options *
 		StdinPort:   s.nextVSockPort(),
 		StdoutPort:  s.nextVSockPort(),
 		StderrPort:  s.nextVSockPort(),
-		DriveID:     firecracker.StringValue(driveID),
 	}, nil
 }
 
@@ -437,6 +438,7 @@ func (s *service) CreateVM(requestCtx context.Context, request *proto.CreateVMRe
 
 	// let all the other methods know that the VM is ready for tasks
 	close(s.vmReady)
+
 	return &empty.Empty{}, nil
 }
 
@@ -476,6 +478,8 @@ func (s *service) createVM(requestCtx context.Context, request *proto.CreateVMRe
 	cmd := firecracker.VMCommandBuilder{}.
 		WithBin(s.config.FirecrackerBinaryPath).
 		WithSocketPath(relSockPath).
+		WithStdout(s.logger.WriterLevel(logrus.InfoLevel)). // TODO
+		WithStderr(s.logger.WriterLevel(logrus.ErrorLevel)).
 		Build(s.shimCtx) // shimCtx so the VM process is only killed when the shim shuts down
 
 	// use shimCtx so the VM is killed when the shim shuts down
@@ -498,11 +502,42 @@ func (s *service) createVM(requestCtx context.Context, request *proto.CreateVMRe
 	rpcClient := ttrpc.NewClient(conn, ttrpc.WithOnClose(func() { _ = conn.Close() }))
 	s.agentClient = taskAPI.NewTaskClient(rpcClient)
 	s.eventBridgeClient = eventbridge.NewGetterClient(rpcClient)
+	s.driveMountClient = drivemount.NewDriveMounterClient(rpcClient)
 	s.exitAfterAllTasksDeleted = request.ExitAfterAllTasksDeleted
 
-	s.logger.Info("successfully started the VM")
+	err = s.mountDrives(requestCtx, request.DriveMounts)
+	if err != nil {
+		return err
+	}
 
+	s.logger.Info("successfully started the VM")
 	return nil
+}
+
+func (s *service) mountDrives(requestCtx context.Context, driveMounts []*proto.FirecrackerDriveMount) error {
+	// TODO support RateLimiter for drive mounts
+	for _, driveMount := range driveMounts {
+		// Verify the request specified an absolute path for the source of the drive on the host.
+		// Otherwise, users can implicitly rely on the CWD of this shim when specifying the drive.
+		if !strings.HasPrefix(driveMount.HostPath, "/") {
+			return errors.Errorf("invalid relative path specified in FirecrackerDriveMount HostPath: %s", driveMount.String())
+		}
+
+		driveID, err := s.stubDriveHandler.PatchStubDrive(requestCtx, s.machine, driveMount.HostPath)
+		if err != nil {
+			return errors.Wrapf(err, "failed to patch drive mount stub")
+		}
+
+		_, err = s.driveMountClient.MountDrive(requestCtx, &drivemount.MountDriveRequest{
+			DriveID:         *driveID,
+			DestinationPath: driveMount.VMPath,
+			FilesytemType:   driveMount.FilesystemType,
+			Options:         driveMount.Options,
+		})
+		if err != nil {
+			return errors.Wrapf(err, "failed to mount drive inside vm")
+		}
+	}
 }
 
 // StopVM will shutdown the firecracker VM and start this shim's shutdown procedure. If the VM has not been
@@ -625,7 +660,7 @@ func (s *service) buildVMConfiguration(req *proto.CreateVMRequest) (*firecracker
 	}
 
 	// Create stub drives first and let stub driver handler manage the drives
-	handler, err := newStubDriveHandler(s.shimDir.RootPath(), s.logger, containerCount)
+	handler, err := newStubDriveHandler(s.shimDir.RootPath(), s.logger, containerCount+len(req.DriveMounts))
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create stub drives")
 	}
@@ -634,13 +669,9 @@ func (s *service) buildVMConfiguration(req *proto.CreateVMRequest) (*firecracker
 	var driveBuilder firecracker.DrivesBuilder
 	// Create non-stub drives
 	if root := req.RootDrive; root != nil {
-		driveBuilder = firecracker.NewDrivesBuilder(root.PathOnHost)
+		driveBuilder = firecracker.NewDrivesBuilder(root.HostPath)
 	} else {
 		driveBuilder = firecracker.NewDrivesBuilder(s.config.RootDrive)
-	}
-
-	for _, drive := range req.AdditionalDrives {
-		driveBuilder = addDriveFromProto(driveBuilder, drive)
 	}
 
 	// a micro VM must know all drives
@@ -686,8 +717,10 @@ func (s *service) Create(requestCtx context.Context, request *taskAPI.CreateTask
 		"checkpoint": request.Checkpoint,
 	}).Debug("creating task")
 
-	bundleDir := bundle.Dir(request.Bundle)
-	err = s.shimDir.CreateBundleLink(request.ID, bundleDir)
+	hostBundleDir := bundle.Dir(request.Bundle)
+	vmBundleDir := bundle.VMBundleDir(request.ID)
+
+	err = s.shimDir.CreateBundleLink(request.ID, hostBundleDir)
 	if err != nil {
 		err = errors.Wrap(err, "failed to create VM dir bundle link")
 		logger.WithError(err).Error()
@@ -710,14 +743,24 @@ func (s *service) Create(requestCtx context.Context, request *taskAPI.CreateTask
 			}
 			return nil, errors.Wrapf(err, "failed to patch stub drive")
 		}
+
+		_, err = s.driveMountClient.MountDrive(requestCtx, &drivemount.MountDriveRequest{
+			DriveID:         *driveID,
+			DestinationPath: vmBundleDir.RootfsPath(),
+			FilesytemType:   "ext4",
+			Options:         nil,
+		})
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to mount drive inside vm")
+		}
 	}
 
-	ociConfigBytes, err := bundleDir.OCIConfig().Bytes()
+	ociConfigBytes, err := hostBundleDir.OCIConfig().Bytes()
 	if err != nil {
 		return nil, err
 	}
 
-	extraData, err := s.generateExtraData(ociConfigBytes, driveID, request.Options)
+	extraData, err := s.generateExtraData(ociConfigBytes, request.Options)
 	if err != nil {
 		err = errors.Wrap(err, "failed to generate extra data")
 		logger.WithError(err).Error()
@@ -767,6 +810,15 @@ func (s *service) Create(requestCtx context.Context, request *taskAPI.CreateTask
 
 		ioConnectorSet = vm.NewIOConnectorProxy(stdinConnectorPair, stdoutConnectorPair, stderrConnectorPair)
 	}
+
+	// override the request with the bundle dir that should be used inside the VM
+	request.Bundle = vmBundleDir.RootPath()
+
+	// The rootfs is mounted via a MountDrive call, so unset Rootfs in the request.
+	// We unfortunately can't rely on just having the runc shim inside the VM do
+	// the mount for us because we sometimes need to do mount retries due to our
+	// requirement of patching stub drives
+	request.Rootfs = nil
 
 	resp, err := s.taskManager.CreateTask(requestCtx, request, s.agentClient, ioConnectorSet)
 	if err != nil {
@@ -831,8 +883,8 @@ func (s *service) Exec(requestCtx context.Context, req *taskAPI.ExecProcessReque
 	logger := s.logger.WithField("task_id", req.ID).WithField("exec_id", req.ExecID)
 	logger.Debug("exec")
 
-	// no OCI config bytes or DriveID to provide for Exec, just leave those fields empty
-	extraData, err := s.generateExtraData(nil, nil, req.Spec)
+	// no OCI config bytes to provide for Exec, just leave those fields empty
+	extraData, err := s.generateExtraData(nil, req.Spec)
 	if err != nil {
 		err = errors.Wrap(err, "failed to generate extra data")
 		logger.WithError(err).Error()

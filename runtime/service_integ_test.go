@@ -44,6 +44,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	_ "github.com/firecracker-microvm/firecracker-containerd/firecracker-control"
+	fcClient "github.com/firecracker-microvm/firecracker-containerd/firecracker-control/client"
 	"github.com/firecracker-microvm/firecracker-containerd/internal"
 	"github.com/firecracker-microvm/firecracker-containerd/internal/vm"
 	"github.com/firecracker-microvm/firecracker-containerd/proto"
@@ -259,10 +260,9 @@ func TestMultipleVMs_Isolated(t *testing.T) {
 				MachineCfg: &proto.FirecrackerMachineConfiguration{
 					MemSizeMib: 512,
 				},
-				RootDrive: &proto.FirecrackerDrive{
-					PathOnHost:   rootfsPath,
-					IsReadOnly:   false,
-					IsRootDevice: true,
+				RootDrive: &proto.FirecrackerRootDrive{
+					HostPath:   rootfsPath,
+					IsReadOnly: false,
 				},
 				NetworkInterfaces: []*proto.FirecrackerNetworkInterface{
 					{
@@ -469,10 +469,9 @@ func TestLongUnixSocketPath_Isolated(t *testing.T) {
 	fcClient := fccontrol.NewFirecrackerClient(pluginClient.Client())
 	_, err = fcClient.CreateVM(ctx, &proto.CreateVMRequest{
 		VMID: vmID,
-		RootDrive: &proto.FirecrackerDrive{
-			PathOnHost:   defaultVMRootfsPath,
-			IsReadOnly:   false,
-			IsRootDevice: true,
+		RootDrive: &proto.FirecrackerRootDrive{
+			HostPath:   defaultVMRootfsPath,
+			IsReadOnly: false,
 		},
 		NetworkInterfaces: []*proto.FirecrackerNetworkInterface{},
 	})
@@ -524,10 +523,9 @@ func TestStubBlockDevices_Isolated(t *testing.T) {
 	fcClient := fccontrol.NewFirecrackerClient(pluginClient.Client())
 	_, err = fcClient.CreateVM(ctx, &proto.CreateVMRequest{
 		VMID: strconv.Itoa(vmID),
-		RootDrive: &proto.FirecrackerDrive{
-			PathOnHost:   rootfsPath,
-			IsReadOnly:   false,
-			IsRootDevice: true,
+		RootDrive: &proto.FirecrackerRootDrive{
+			HostPath:   rootfsPath,
+			IsReadOnly: false,
 		},
 		NetworkInterfaces: []*proto.FirecrackerNetworkInterface{
 			{
@@ -659,10 +657,9 @@ func testCreateContainerWithSameName(t *testing.T, vmID string) {
 		fcClient := fccontrol.NewFirecrackerClient(pluginClient.Client())
 		_, err = fcClient.CreateVM(ctx, &proto.CreateVMRequest{
 			VMID: vmID,
-			RootDrive: &proto.FirecrackerDrive{
-				PathOnHost:   defaultRootfsPath,
-				IsReadOnly:   true,
-				IsRootDevice: true,
+			RootDrive: &proto.FirecrackerRootDrive{
+				HostPath:   defaultRootfsPath,
+				IsReadOnly: true,
 			},
 			ContainerCount: 2,
 		})
@@ -786,4 +783,140 @@ func TestCreateTooManyContainers_Isolated(t *testing.T) {
 	_, err = c2.NewTask(ctx, cio.NewCreator(cio.WithStreams(nil, &stdout, &stderr)))
 	assert.Equal("no remaining stub drives to be used: unavailable: unknown", err.Error())
 	require.Error(t, err)
+}
+
+type fccdClient struct {
+	*containerd.Client
+	firecracker *fcClient.Client
+}
+
+func (c fccdClient) Close() error {
+	err := c.Client.Close()
+	if err != nil {
+		return err
+	}
+
+	return c.firecracker.Close()
+}
+
+func FCCDClient() (*fccdClient, error) {
+	ctrdClient, err := containerd.New(containerdSockPath, containerd.WithDefaultRuntime(firecrackerRuntime))
+	if err != nil {
+		return nil, err
+	}
+
+	fcctrlClient, err := fcClient.New(containerdSockPath + ".ttrpc")
+	if err != nil {
+		return nil, err
+	}
+
+	return &fccdClient{
+		Client:      ctrdClient,
+		firecracker: fcctrlClient,
+	}, nil
+}
+
+func tryCommand(ctx context.Context, name string, args ...string) error {
+	output, err := exec.CommandContext(ctx, name, args...).CombinedOutput()
+	if err != nil {
+		return errors.Wrapf(err, "failed to run command %+v, output:\n %s", append([]string{name}, args...), string(output))
+	}
+
+	return nil
+}
+
+type testFile struct {
+	subpath  string
+	contents string
+}
+
+func createTestExt4Img(ctx context.Context, testFiles ...testFile) (string, error) {
+	tempdir, err := ioutil.TempDir("", "")
+	if err != nil {
+		return "", err
+	}
+
+	for _, testFile := range testFiles {
+		destPath := filepath.Join(tempdir, testFile.subpath)
+
+		err = os.MkdirAll(filepath.Dir(destPath), 0777)
+		if err != nil {
+			return "", err
+		}
+
+		err = ioutil.WriteFile(destPath, []byte(testFile.contents), 0777)
+		if err != nil {
+			return "", err
+		}
+	}
+
+	imgFile, err := ioutil.TempFile("", "")
+	if err != nil {
+		return "", err
+	}
+
+	return imgFile.Name(), tryCommand(ctx, "mkfs.ext4", "-d", tempdir, imgFile.Name(), "65536")
+}
+
+func TestDriveMount_Isolated(t *testing.T) {
+	internal.RequiresIsolation(t)
+
+	testTimeout := 120 * time.Second
+	ctx, cancel := context.WithTimeout(namespaces.WithNamespace(context.Background(), defaultNamespace), testTimeout)
+	defer cancel()
+
+	client, err := FCCDClient()
+	require.NoError(t, err, "unable to create containerd/fccontrol client, is containerd running?")
+	defer client.Close()
+
+	image, err := alpineImage(ctx, client.Client, naiveSnapshotterName) // TODO client.Client is dumb
+	require.NoError(t, err, "failed to get alpine image")
+
+	helloFile := testFile{
+		subpath:  "foo/hello",
+		contents: "hey",
+	}
+	vmMntPath := "/mnt"
+	ctrMntPath := "/vm"
+
+	ext4HostPath, err := createTestExt4Img(ctx, helloFile)
+	require.NoError(t, err, "failed to create test ext4 image")
+
+	vmID := "test-drive-mount"
+
+	_, err = client.firecracker.CreateVM(ctx, &proto.CreateVMRequest{
+		VMID: vmID,
+		DriveMounts: []*proto.FirecrackerDriveMount{{
+			HostPath:       ext4HostPath,
+			VMPath:         vmMntPath,
+			FilesystemType: "ext4",
+			// TODO test options
+		}},
+	})
+	require.NoError(t, err, "failed to create vm")
+
+	containerName := fmt.Sprintf("%s-container", vmID)
+	snapshotName := fmt.Sprintf("%s-snapshot", vmID)
+
+	newContainer, err := client.NewContainer(ctx,
+		containerName,
+		containerd.WithSnapshotter(naiveSnapshotterName),
+		containerd.WithNewSnapshot(snapshotName, image),
+		containerd.WithNewSpec(
+			oci.WithProcessArgs("/bin/cat", filepath.Join(ctrMntPath, helloFile.subpath)),
+
+			oci.WithMounts([]specs.Mount{
+				{
+					Source:      vmMntPath,
+					Destination: ctrMntPath,
+					Options:     []string{"bind"},
+				},
+			}),
+			firecrackeroci.WithVMID(vmID),
+			firecrackeroci.WithVMNetwork,
+		),
+	)
+	require.NoError(t, err, "failed to create container %s", containerName)
+
+	assert.Equal(t, helloFile.contents, startAndWaitTask(ctx, t, newContainer))
 }

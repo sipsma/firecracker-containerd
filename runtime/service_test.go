@@ -78,8 +78,8 @@ func TestBuildVMConfiguration(t *testing.T) {
 			request: &proto.CreateVMRequest{
 				KernelArgs:      "REQUEST KERNEL ARGS",
 				KernelImagePath: "REQUEST KERNEL IMAGE",
-				RootDrive: &proto.FirecrackerDrive{
-					PathOnHost: "REQUEST ROOT DRIVE",
+				RootDrive: &proto.FirecrackerRootDrive{
+					HostPath: "REQUEST ROOT DRIVE",
 				},
 				MachineCfg: &proto.FirecrackerMachineConfiguration{
 					CPUTemplate: "C3",
@@ -111,8 +111,8 @@ func TestBuildVMConfiguration(t *testing.T) {
 			name: "Priority",
 			request: &proto.CreateVMRequest{
 				KernelArgs: "REQUEST KERNEL ARGS",
-				RootDrive: &proto.FirecrackerDrive{
-					PathOnHost: "REQUEST ROOT DRIVE",
+				RootDrive: &proto.FirecrackerRootDrive{
+					HostPath: "REQUEST ROOT DRIVE",
 				},
 				MachineCfg: &proto.FirecrackerMachineConfiguration{
 					CPUTemplate: "T2",
