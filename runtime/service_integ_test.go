@@ -787,3 +787,38 @@ func TestCreateTooManyContainers_Isolated(t *testing.T) {
 	assert.Equal("no remaining stub drives to be used: unavailable: unknown", err.Error())
 	require.Error(t, err)
 }
+
+func TestKernelPanic_Isolated(t *testing.T) {
+	internal.RequiresIsolation(t)
+
+	ctx := namespaces.WithNamespace(context.Background(), "default")
+
+	client, err := containerd.New(containerdSockPath, containerd.WithDefaultRuntime(firecrackerRuntime))
+	require.NoError(t, err, "unable to create client to containerd service at %s, is containerd running?", containerdSockPath)
+	defer client.Close()
+
+	image, err := alpineImage(ctx, client, naiveSnapshotterName)
+	require.NoError(t, err, "failed to get alpine image")
+
+	var ints string
+	for i := 1; i < 128; i++ {
+		ints += strconv.Itoa(i) + " "
+	}
+
+	ctr, err := client.NewContainer(ctx, "blockwriter",
+		containerd.WithRuntime(firecrackerRuntime, nil),
+		containerd.WithSnapshotter(naiveSnapshotterName),
+		containerd.WithNewSnapshot("blockwriter", image),
+		containerd.WithNewSpec(
+			oci.WithProcessArgs("sh", "-c", fmt.Sprintf(
+				"for i in %s; do dd if=/dev/zero of=/root/testfile$i bs=1024 count=1024 && sleep 1; done",
+				ints,
+			)),
+			oci.WithDefaultPathEnv,
+		),
+	)
+	require.NoError(t, err, "failed to create container")
+
+	t.Logf(startAndWaitTask(ctx, t, ctr))
+	time.Sleep(10 * time.Second)
+}

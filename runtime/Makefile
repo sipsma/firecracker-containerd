@@ -12,14 +12,14 @@
 # permissions and limitations under the License.
 
 # Set this to pass additional commandline flags to the go compiler, e.g. "make test EXTRAGOARGS=-v"
-EXTRAGOARGS?=
+EXTRAGOARGS?=-v -count=1
 
 SOURCES:=$(shell find . -name '*.go')
 GOMOD := $(shell go env GOMOD)
 GOSUM := $(GOMOD:.mod=.sum)
 DOCKER_IMAGE_TAG?=latest
 
-INTEG_TEST_SUFFIX := _Isolated
+INTEG_TEST_SUFFIX := TestKernelPanic_Isolated
 INTEG_TESTNAMES=$(shell docker run --rm \
 		--workdir="/firecracker-containerd/runtime" \
 		localhost/firecracker-containerd-test:$(DOCKER_IMAGE_TAG) \

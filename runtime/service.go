@@ -476,6 +476,8 @@ func (s *service) createVM(requestCtx context.Context, request *proto.CreateVMRe
 	cmd := firecracker.VMCommandBuilder{}.
 		WithBin(s.config.FirecrackerBinaryPath).
 		WithSocketPath(relSockPath).
+		WithStdout(s.logger.WriterLevel(logrus.InfoLevel)).
+		WithStderr(s.logger.WriterLevel(logrus.ErrorLevel)).
 		Build(s.shimCtx) // shimCtx so the VM process is only killed when the shim shuts down
 
 	// use shimCtx so the VM is killed when the shim shuts down
