@@ -147,6 +147,14 @@ HOSTLOCAL_BIN?=$(CNI_BIN_ROOT)/host-local
 $(HOSTLOCAL_BIN): $(CNI_BIN_ROOT)
 	GOBIN=$(CNI_BIN_ROOT) GO111MODULE=off go get -u github.com/containernetworking/plugins/plugins/ipam/host-local
 
+BRIDGE_BIN?=$(CNI_BIN_ROOT)/bridge
+$(BRIDGE_BIN): $(CNI_BIN_ROOT)
+	GOBIN=$(CNI_BIN_ROOT) GO111MODULE=off go get -u github.com/containernetworking/plugins/plugins/main/bridge
+
+PORTMAP_BIN?=$(CNI_BIN_ROOT)/portmap
+$(PORTMAP_BIN): $(CNI_BIN_ROOT)
+	GOBIN=$(CNI_BIN_ROOT) GO111MODULE=off go get -u github.com/containernetworking/plugins/plugins/meta/portmap
+
 TC_REDIRECT_TAP_BIN?=$(CNI_BIN_ROOT)/tc-redirect-tap
 $(TC_REDIRECT_TAP_BIN): $(CNI_BIN_ROOT)
 	GOBIN=$(CNI_BIN_ROOT) go install github.com/firecracker-microvm/firecracker-go-sdk/cni/cmd/tc-redirect-tap
@@ -157,7 +165,7 @@ $(FCNET_CONFIG):
 	cp tools/demo/fcnet.conflist $(FCNET_CONFIG)
 
 .PHONY: demo-network
-demo-network: $(PTP_BIN) $(HOSTLOCAL_BIN) $(TC_REDIRECT_TAP_BIN) $(FCNET_CONFIG)
+demo-network: $(PTP_BIN) $(HOSTLOCAL_BIN) $(TC_REDIRECT_TAP_BIN) $(FCNET_CONFIG) $(BRIDGE_BIN) $(PORTMAP_BIN)
 
 ##########################
 # Firecracker submodule

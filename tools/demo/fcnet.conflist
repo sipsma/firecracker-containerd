@@ -2,15 +2,23 @@
   "cniVersion": "0.3.1",
   "name": "fcnet",
   "plugins": [
+		{
+            "type": "bridge",
+            "bridge": "cni-fc0",
+            "isGateway": true,
+            "ipMasq": true,
+            "ipam": {
+                "type": "host-local",
+                "subnet": "192.168.0.0/16",
+                "routes": [
+                    { "dst": "0.0.0.0/0"   }
+                ]
+            }
+    },
     {
-      "type": "ptp",
-      "ipMasq": true,
-      "mtu": 1500,
-      "ipam": {
-        "type": "host-local",
-        "subnet": "192.168.1.0/24",
-        "resolvConf": "/etc/resolv.conf"
-      }
+            "type": "portmap",
+            "capabilities": {"portMappings": true},
+            "snat": true
     },
     {
       "type": "tc-redirect-tap"
