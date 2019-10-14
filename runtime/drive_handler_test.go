@@ -24,6 +24,7 @@ import (
 
 	"github.com/containerd/containerd/log"
 
+	"github.com/firecracker-microvm/firecracker-containerd/proto"
 	"github.com/firecracker-microvm/firecracker-go-sdk"
 	models "github.com/firecracker-microvm/firecracker-go-sdk/client/models"
 	ops "github.com/firecracker-microvm/firecracker-go-sdk/client/operations"
@@ -40,7 +41,10 @@ func TestStubDriveHandler(t *testing.T) {
 	}()
 
 	logger := log.G(context.Background())
-	handler, err := newStubDriveHandler(tempPath, logger, 5)
+
+	// TODO better tests for ratelimiter stuff
+	rateLimiters := make([]*proto.FirecrackerRateLimiter, 5, 5)
+	handler, err := newStubDriveHandler(tempPath, logger, rateLimiters)
 	assert.NoError(t, err)
 	assert.Equal(t, 5, len(handler.GetDrives()))
 
@@ -71,19 +75,22 @@ func TestPatchStubDrive(t *testing.T) {
 	client, err := firecracker.NewMachine(ctx, firecracker.Config{}, firecracker.WithClient(fcClient))
 	assert.NoError(t, err, "failed to create new machine")
 
+	// TODO better test for rate limiter stuff
 	handler := stubDriveHandler{
-		drives: []models.Drive{
-			{
-				DriveID:    firecracker.String("stub0"),
-				PathOnHost: firecracker.String("/fake/stub/path0"),
-			},
-			{
-				DriveID:    firecracker.String("stub1"),
-				PathOnHost: firecracker.String("/fake/stub/path1"),
-			},
-			{
-				DriveID:    firecracker.String("stub2"),
-				PathOnHost: firecracker.String("/fake/stub/path2"),
+		drives: map[*proto.FirecrackerRateLimiter][]models.Drive{
+			nil: []models.Drive{
+				{
+					DriveID:    firecracker.String("stub0"),
+					PathOnHost: firecracker.String("/fake/stub/path0"),
+				},
+				{
+					DriveID:    firecracker.String("stub1"),
+					PathOnHost: firecracker.String("/fake/stub/path1"),
+				},
+				{
+					DriveID:    firecracker.String("stub2"),
+					PathOnHost: firecracker.String("/fake/stub/path2"),
+				},
 			},
 		},
 	}
@@ -95,7 +102,7 @@ func TestPatchStubDrive(t *testing.T) {
 	}
 
 	for i, path := range expectedReplacements {
-		driveID, err := handler.PatchStubDrive(ctx, client, path)
+		driveID, err := handler.PatchStubDrive(ctx, client, path, nil)
 		assert.NoError(t, err, "failed to patch stub drive")
 		assert.Equal(t, expectedDriveIDs[i], firecracker.StringValue(driveID), "drive ids are not equal")
 	}
@@ -114,7 +121,7 @@ func TestPatchStubDrive_concurrency(t *testing.T) {
 	assert.NoError(t, err, "failed to create new machine")
 
 	handler := stubDriveHandler{
-		drives: []models.Drive{
+		drives: map[*proto.FirecrackerRateLimiter][]models.Drive{nil: []models.Drive{
 			{
 				DriveID:    firecracker.String("stub0"),
 				PathOnHost: firecracker.String("/fake/stub/path0"),
@@ -163,7 +170,7 @@ func TestPatchStubDrive_concurrency(t *testing.T) {
 				DriveID:    firecracker.String("stub11"),
 				PathOnHost: firecracker.String("/fake/stub/path11"),
 			},
-		},
+		}},
 	}
 
 	replacementPaths := []string{
@@ -185,7 +192,7 @@ func TestPatchStubDrive_concurrency(t *testing.T) {
 	for _, path := range replacementPaths {
 		go func(path string) {
 			defer wg.Done()
-			_, err := handler.PatchStubDrive(ctx, client, path)
+			_, err := handler.PatchStubDrive(ctx, client, path, nil)
 			assert.NoError(t, err, "failed to patch stub drive")
 		}(path)
 	}
@@ -198,11 +205,13 @@ func TestPatchStubDrive_concurrency(t *testing.T) {
 	}
 
 	assert.Equal(t, len(validPaths), len(handler.drives), "incorrect drive amount")
-	for _, drive := range handler.drives {
-		path := firecracker.StringValue(drive.PathOnHost)
-		_, ok := validPaths[path]
-		assert.True(t, ok, "path was not in valid path map")
-		delete(validPaths, path)
+	for _, driveModelList := range handler.drives {
+		for _, drive := range driveModelList {
+			path := firecracker.StringValue(drive.PathOnHost)
+			_, ok := validPaths[path]
+			assert.True(t, ok, "path was not in valid path map")
+			delete(validPaths, path)
+		}
 	}
 
 }
@@ -231,11 +240,12 @@ func TestCreateStubDrive(t *testing.T) {
 	assert.NoError(t, err, "failed to create test directory")
 	defer os.RemoveAll(path)
 
+	// TODO fix this
 	for _, c := range cases {
 		c := c // see https://github.com/kyoh86/scopelint/issues/4
 		t.Run(c.Name, func(t *testing.T) {
 			logger := log.G(context.Background())
-			handler, err := newStubDriveHandler(path, logger, 0)
+			handler, err := newStubDriveHandler(path, logger, nil)
 			assert.NoError(t, err)
 
 			stubDrivePath := filepath.Join(path, c.Name)

@@ -515,7 +515,7 @@ func (s *service) createVM(requestCtx context.Context, request *proto.CreateVMRe
 }
 
 func (s *service) mountDrives(requestCtx context.Context, driveMounts []*proto.FirecrackerDriveMount) error {
-	// TODO support RateLimiter for drive mounts
+	// TODO Support RateLimiter for drive mounts
 	for _, driveMount := range driveMounts {
 		// Verify the request specified an absolute path for the source of the drive on the host.
 		// Otherwise, users can implicitly rely on the CWD of this shim when specifying the drive.
@@ -523,7 +523,7 @@ func (s *service) mountDrives(requestCtx context.Context, driveMounts []*proto.F
 			return errors.Errorf("invalid relative path specified in FirecrackerDriveMount HostPath: %s", driveMount.String())
 		}
 
-		driveID, err := s.stubDriveHandler.PatchStubDrive(requestCtx, s.machine, driveMount.HostPath)
+		driveID, err := s.stubDriveHandler.PatchStubDrive(requestCtx, s.machine, driveMount.HostPath, driveMount.RateLimiter)
 		if err != nil {
 			return errors.Wrapf(err, "failed to patch drive mount stub")
 		}
@@ -538,6 +538,7 @@ func (s *service) mountDrives(requestCtx context.Context, driveMounts []*proto.F
 			return errors.Wrapf(err, "failed to mount drive inside vm")
 		}
 	}
+	return nil
 }
 
 // StopVM will shutdown the firecracker VM and start this shim's shutdown procedure. If the VM has not been
@@ -660,7 +661,12 @@ func (s *service) buildVMConfiguration(req *proto.CreateVMRequest) (*firecracker
 	}
 
 	// Create stub drives first and let stub driver handler manage the drives
-	handler, err := newStubDriveHandler(s.shimDir.RootPath(), s.logger, containerCount+len(req.DriveMounts))
+	driveRateLimiters := make([]*proto.FirecrackerRateLimiter, containerCount, containerCount)
+	for _, driveMount := range req.DriveMounts {
+		driveRateLimiters = append(driveRateLimiters, driveMount.RateLimiter)
+	}
+
+	handler, err := newStubDriveHandler(s.shimDir.RootPath(), s.logger, driveRateLimiters)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create stub drives")
 	}
@@ -736,7 +742,7 @@ func (s *service) Create(requestCtx context.Context, request *taskAPI.CreateTask
 
 	var driveID *string
 	for _, mnt := range request.Rootfs {
-		driveID, err = s.stubDriveHandler.PatchStubDrive(requestCtx, s.machine, mnt.Source)
+		driveID, err = s.stubDriveHandler.PatchStubDrive(requestCtx, s.machine, mnt.Source, nil)
 		if err != nil {
 			if err == ErrDrivesExhausted {
 				return nil, errors.Wrapf(errdefs.ErrUnavailable, "no remaining stub drives to be used")

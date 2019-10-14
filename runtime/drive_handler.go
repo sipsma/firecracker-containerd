@@ -26,6 +26,7 @@ import (
 	models "github.com/firecracker-microvm/firecracker-go-sdk/client/models"
 
 	"github.com/firecracker-microvm/firecracker-containerd/internal"
+	"github.com/firecracker-microvm/firecracker-containerd/proto"
 )
 
 const (
@@ -38,6 +39,9 @@ var (
 	// can happen by calling PatchStubDrive greater than the number of drives.
 	ErrDrivesExhausted = fmt.Errorf("There are no remaining drives to be used")
 
+	// TODO docs
+	ErrNoSuchRateLimiter = fmt.Errorf("There are no remaining drives with the request rate limiter to be used")
+
 	// ErrDriveIDNil should never happen, but we safe guard against nil dereferencing
 	ErrDriveIDNil = fmt.Errorf("DriveID of current drive is nil")
 )
@@ -46,17 +50,21 @@ var (
 type stubDriveHandler struct {
 	RootPath       string
 	stubDriveIndex int64
-	drives         []models.Drive
+	drives         map[*proto.FirecrackerRateLimiter][]models.Drive
 	logger         *logrus.Entry
 	mutex          sync.Mutex
 }
 
-func newStubDriveHandler(path string, logger *logrus.Entry, count int) (*stubDriveHandler, error) {
+func newStubDriveHandler(
+	path string,
+	logger *logrus.Entry,
+	rateLimiters []*proto.FirecrackerRateLimiter,
+) (*stubDriveHandler, error) {
 	h := stubDriveHandler{
 		RootPath: path,
 		logger:   logger,
 	}
-	drives, err := h.createStubDrives(count)
+	drives, err := h.createStubDrives(rateLimiters)
 	if err != nil {
 		return nil, err
 	}
@@ -64,19 +72,25 @@ func newStubDriveHandler(path string, logger *logrus.Entry, count int) (*stubDri
 	return &h, nil
 }
 
-func (h *stubDriveHandler) createStubDrives(stubDriveCount int) ([]models.Drive, error) {
+func (h *stubDriveHandler) createStubDrives(
+	rateLimiters []*proto.FirecrackerRateLimiter,
+) (map[*proto.FirecrackerRateLimiter][]models.Drive, error) {
+	stubDriveCount := len(rateLimiters)
+
 	paths, err := h.stubDrivePaths(stubDriveCount)
 	if err != nil {
 		return nil, err
 	}
 
-	stubDrives := make([]models.Drive, 0, stubDriveCount)
+	stubDrives := make(map[*proto.FirecrackerRateLimiter][]models.Drive, stubDriveCount)
 	for i, path := range paths {
-		stubDrives = append(stubDrives, models.Drive{
+		rateLimiter := rateLimiters[i]
+		stubDrives[rateLimiter] = append(stubDrives[rateLimiter], models.Drive{
 			DriveID:      firecracker.String(fmt.Sprintf("stub%d", i)),
 			IsReadOnly:   firecracker.Bool(false),
 			PathOnHost:   firecracker.String(path),
 			IsRootDevice: firecracker.Bool(false),
+			RateLimiter:  rateLimiterFromProto(rateLimiter),
 		})
 	}
 
@@ -152,23 +166,21 @@ func (h *stubDriveHandler) createStubDrive(driveID, path string) error {
 
 // GetDrives returns the associated stub drives
 func (h *stubDriveHandler) GetDrives() []models.Drive {
-	return h.drives
-}
-
-// InDriveSet will iterate through all the stub drives and see if the path
-// exists on any of the drives
-func (h *stubDriveHandler) InDriveSet(path string) bool {
-	for _, d := range h.GetDrives() {
-		if firecracker.StringValue(d.PathOnHost) == path {
-			return true
-		}
+	var driveModels []models.Drive
+	for _, driveModelList := range h.drives {
+		driveModels = append(driveModels, driveModelList...)
 	}
 
-	return false
+	return driveModels
 }
 
 // PatchStubDrive will replace the next available stub drive with the provided drive
-func (h *stubDriveHandler) PatchStubDrive(ctx context.Context, client firecracker.MachineIface, pathOnHost string) (*string, error) {
+func (h *stubDriveHandler) PatchStubDrive(
+	ctx context.Context,
+	client firecracker.MachineIface,
+	pathOnHost string,
+	rateLimiter *proto.FirecrackerRateLimiter,
+) (*string, error) {
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
 
@@ -176,23 +188,27 @@ func (h *stubDriveHandler) PatchStubDrive(ctx context.Context, client firecracke
 	if h.stubDriveIndex >= int64(len(h.drives)) {
 		return nil, ErrDrivesExhausted
 	}
+	h.stubDriveIndex++
 
-	d := h.drives[h.stubDriveIndex]
-	d.PathOnHost = &pathOnHost
+	driveModelList := h.drives[rateLimiter]
+	if len(driveModelList) == 0 {
+		return nil, ErrNoSuchRateLimiter
+	}
+	driveModel := driveModelList[0]
+	h.drives[rateLimiter] = h.drives[rateLimiter][1:]
 
-	if d.DriveID == nil {
+	driveModel.PathOnHost = &pathOnHost
+
+	if driveModel.DriveID == nil {
 		// this should never happen, but we want to ensure that we never nil
 		// dereference
 		return nil, ErrDriveIDNil
 	}
 
-	h.drives[h.stubDriveIndex] = d
-
-	err := client.UpdateGuestDrive(ctx, firecracker.StringValue(d.DriveID), pathOnHost)
+	err := client.UpdateGuestDrive(ctx, firecracker.StringValue(driveModel.DriveID), pathOnHost)
 	if err != nil {
 		return nil, err
 	}
 
-	h.stubDriveIndex++
-	return d.DriveID, nil
+	return driveModel.DriveID, nil
 }

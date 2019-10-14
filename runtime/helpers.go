@@ -131,6 +131,10 @@ func addDriveFromProto(builder firecracker.DrivesBuilder, drive *proto.Firecrack
 // rateLimiterFromProto creates a firecracker RateLimiter object from the
 // protobuf message.
 func rateLimiterFromProto(rl *proto.FirecrackerRateLimiter) *models.RateLimiter {
+	if rl == nil {
+		return nil
+	}
+
 	result := models.RateLimiter{}
 	if rl.Bandwidth != nil {
 		result.Bandwidth = tokenBucketFromProto(rl.Bandwidth)

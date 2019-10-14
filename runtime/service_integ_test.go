@@ -886,12 +886,22 @@ func TestDriveMount_Isolated(t *testing.T) {
 
 	_, err = client.firecracker.CreateVM(ctx, &proto.CreateVMRequest{
 		VMID: vmID,
-		DriveMounts: []*proto.FirecrackerDriveMount{{
-			HostPath:       ext4HostPath,
-			VMPath:         vmMntPath,
-			FilesystemType: "ext4",
-			// TODO test options
-		}},
+		DriveMounts: []*proto.FirecrackerDriveMount{
+			{
+				HostPath:       ext4HostPath,
+				VMPath:         vmMntPath,
+				FilesystemType: "ext4",
+				// TODO test options
+				RateLimiter: &proto.FirecrackerRateLimiter{
+					Bandwidth: &proto.FirecrackerTokenBucket{
+						OneTimeBurst: 65536,
+						RefillTime:   1,
+						Capacity:     65536,
+					},
+				},
+			},
+			// TODO test more mounts
+		},
 	})
 	require.NoError(t, err, "failed to create vm")
 
