@@ -21,6 +21,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/firecracker-microvm/firecracker-containerd/proto"
+	"github.com/firecracker-microvm/firecracker-go-sdk"
 	models "github.com/firecracker-microvm/firecracker-go-sdk/client/models"
 )
 
@@ -88,4 +89,33 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func machineConfigurationFromProto(cfg *Config, req *proto.FirecrackerMachineConfiguration) models.MachineConfiguration {
+	config := models.MachineConfiguration{
+		CPUTemplate: models.CPUTemplate(cfg.CPUTemplate),
+		VcpuCount:   firecracker.Int64(int64(cfg.CPUCount)),
+		MemSizeMib:  firecracker.Int64(defaultMemSizeMb),
+		HtEnabled:   firecracker.Bool(cfg.HtEnabled),
+	}
+
+	if req == nil {
+		return config
+	}
+
+	if name := req.CPUTemplate; name != "" {
+		config.CPUTemplate = models.CPUTemplate(name)
+	}
+
+	if count := req.VcpuCount; count > 0 {
+		config.VcpuCount = firecracker.Int64(int64(count))
+	}
+
+	if size := req.MemSizeMib; size > 0 {
+		config.MemSizeMib = firecracker.Int64(int64(size))
+	}
+
+	config.HtEnabled = firecracker.Bool(req.HtEnabled)
+
+	return config
 }

@@ -26,14 +26,13 @@ import (
 	"syscall"
 
 	"github.com/firecracker-microvm/firecracker-go-sdk"
-	models "github.com/firecracker-microvm/firecracker-go-sdk/client/models"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/sys/unix"
 
 	"github.com/firecracker-microvm/firecracker-containerd/internal"
 	"github.com/firecracker-microvm/firecracker-containerd/internal/vm"
-	"github.com/firecracker-microvm/firecracker-containerd/runtime/stubdrive"
 )
 
 // runcJailer uses runc to set up a jailed environment for the Firecracker VM.
@@ -242,14 +241,12 @@ func (j runcJailer) BuildLinkFifoHandler() firecracker.Handler {
 
 // StubDrivesOptions will return a set of options used to create a new stub
 // drive handler.
-func (j runcJailer) StubDrivesOptions() []stubdrive.StubDrivesOpt {
-	return []stubdrive.StubDrivesOpt{
-		func(drives []models.Drive) error {
-			for _, drive := range drives {
-				path := firecracker.StringValue(drive.PathOnHost)
-				if err := os.Chown(path, int(j.uid), int(j.gid)); err != nil {
-					return err
-				}
+func (j runcJailer) StubDrivesOptions() []FileOpt {
+	return []FileOpt{
+		func(file *os.File) error {
+			err := unix.Fchown(int(file.Fd()), int(j.uid), int(j.gid))
+			if err != nil {
+				return errors.Wrapf(err, "failed to chown stub file %q", file.Name())
 			}
 			return nil
 		},

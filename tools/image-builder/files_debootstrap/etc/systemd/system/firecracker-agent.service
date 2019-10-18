@@ -16,6 +16,8 @@ StartLimitIntervalSec=2
 After=local-fs.target
 Requires=local-fs.target
 
+# ExecStart=/usr/bin/strace -f -s 4096 /usr/local/bin/agent
+
 [Service]
 Type=simple
 WorkingDirectory=/container

@@ -19,7 +19,8 @@ GOMOD := $(shell go env GOMOD)
 GOSUM := $(GOMOD:.mod=.sum)
 DOCKER_IMAGE_TAG?=latest
 
-INTEG_TEST_SUFFIX := _Isolated
+# INTEG_TEST_SUFFIX := _Isolated
+INTEG_TEST_SUFFIX := TestDriveMount_Isolated
 INTEG_TESTNAMES=$(shell docker run --rm \
 		--workdir="/firecracker-containerd/runtime" \
 		localhost/firecracker-containerd-test:$(DOCKER_IMAGE_TAG) \
