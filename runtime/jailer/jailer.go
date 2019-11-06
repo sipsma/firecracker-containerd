@@ -11,7 +11,7 @@
 // express or implied. See the License for the specific language governing
 // permissions and limitations under the License.
 
-package main
+package jailer
 
 import (
 	"context"
@@ -21,6 +21,7 @@ import (
 
 	"github.com/firecracker-microvm/firecracker-containerd/internal/vm"
 	"github.com/firecracker-microvm/firecracker-containerd/proto"
+	"github.com/firecracker-microvm/firecracker-containerd/runtime/stubdrive"
 )
 
 const (
@@ -29,7 +30,7 @@ const (
 	jailerFifoHandlerName = "firecracker-containerd-jail-fifo-handler"
 	rootfsFolder          = "rootfs"
 
-	// TODO evenetually we can get rid of this when we add usernamespaces to
+	// TODO eventually we can get rid of this when we add usernamespaces to
 	// jailing.
 	jailerUID = 300000
 	jailerGID = 300000
@@ -39,14 +40,14 @@ var (
 	runcConfigPath = "/etc/containerd/firecracker-runc-config.json"
 )
 
-// jailer will allow modification and provide options to the the Firecracker VM
+// Jailer will allow modification and provide options to the the Firecracker VM
 // to allow for jailing. In addition, this will allow for given files to be exposed
 // to the jailed filesystem.
-type jailer interface {
+type Jailer interface {
 	// BuildJailedMachine will modify the firecracker.Config and provide
 	// firecracker.Opt to be passed into firecracker.NewMachine which will allow
 	// for the VM to be jailed.
-	BuildJailedMachine(cfg *Config, machineCfg *firecracker.Config, vmID string) ([]firecracker.Opt, error)
+	BuildJailedMachine(machineCfg *firecracker.Config, firecrackerBinaryPath string) ([]firecracker.Opt, error)
 	// ExposeFileToJail will expose the given file to the jailed filesystem, including
 	// regular files and block devices. An error is returned if provided a path to a file
 	// with type that is not supported.
@@ -55,23 +56,23 @@ type jailer interface {
 	JailPath() vm.Dir
 	// StubDrivesOptions will return a set of options used to create a new stub
 	// drive handler.
-	StubDrivesOptions() []stubDrivesOpt
+	StubDrivesOptions() []stubdrive.StubDrivesOpt
 }
 
-// newJailer is used to construct a jailer from the CreateVM request. If no
+// NewJailer is used to construct a Jailer from the CreateVM request. If no
 // request or jailer config was provided, then the noopJailer will be returned.
-func newJailer(
+func NewJailer(
 	ctx context.Context,
 	logger *logrus.Entry,
-	ociBundlePath string,
-	service *service,
+	shimDir vm.Dir,
+	runcBinaryPath string,
 	request *proto.CreateVMRequest,
-) (jailer, error) {
+) (Jailer, error) {
 	if request == nil || request.JailerConfig == nil {
 		l := logger.WithField("jailer", "noop")
-		return newNoopJailer(ctx, l, service.shimDir), nil
+		return NewNoopJailer(ctx, l, shimDir), nil
 	}
 
 	l := logger.WithField("jailer", "runc")
-	return newRuncJailer(ctx, l, ociBundlePath, service.config.JailerConfig.RuncBinaryPath, jailerUID, jailerGID)
+	return NewRuncJailer(ctx, l, shimDir.RootPath(), runcBinaryPath, jailerUID, jailerGID)
 }

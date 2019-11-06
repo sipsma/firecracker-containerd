@@ -60,6 +60,8 @@ import (
 	"github.com/firecracker-microvm/firecracker-containerd/proto"
 	drivemount "github.com/firecracker-microvm/firecracker-containerd/proto/service/drivemount/ttrpc"
 	fccontrolTtrpc "github.com/firecracker-microvm/firecracker-containerd/proto/service/fccontrol/ttrpc"
+	"github.com/firecracker-microvm/firecracker-containerd/runtime/jailer"
+	"github.com/firecracker-microvm/firecracker-containerd/runtime/stubdrive"
 )
 
 func init() {
@@ -123,15 +125,14 @@ type service struct {
 	agentClient              taskAPI.TaskService
 	eventBridgeClient        eventbridge.Getter
 	driveMountClient         drivemount.DriveMounterService
-	stubDriveHandler         *stubDriveHandler
+	stubDriveHandler         *stubdrive.StubDriveHandler
 	exitAfterAllTasksDeleted bool // exit the VM and shim when all tasks are deleted
+	jailer                   jailer.Jailer
 
 	machine          *firecracker.Machine
 	machineConfig    *firecracker.Config
 	vsockIOPortCount uint32
 	vsockPortMu      sync.Mutex
-
-	jailer jailer
 }
 
 func shimOpts(shimCtx context.Context) (*shim.Opts, error) {
@@ -196,7 +197,6 @@ func NewService(shimCtx context.Context, id string, remotePublisher shim.Publish
 		config: config,
 
 		vmReady: make(chan struct{}),
-		jailer:  newNoopJailer(shimCtx, logger, shimDir),
 	}
 
 	s.startEventForwarders(remotePublisher)
@@ -464,7 +464,7 @@ func (s *service) createVM(requestCtx context.Context, request *proto.CreateVMRe
 	}()
 
 	s.logger.Info("creating new VM")
-	s.jailer, err = newJailer(s.shimCtx, s.logger, string(s.shimDir), s, request)
+	s.jailer, err = jailer.NewJailer(s.shimCtx, s.logger, s.shimDir, s.config.JailerConfig.RuncBinaryPath, request)
 	if err != nil {
 		return errors.Wrap(err, "failed to create jailer")
 	}
@@ -483,7 +483,7 @@ func (s *service) createVM(requestCtx context.Context, request *proto.CreateVMRe
 		return errors.Wrapf(err, "failed to get relative path to firecracker vsock")
 	}
 
-	jailedOpts, err := s.jailer.BuildJailedMachine(s.config, s.machineConfig, s.vmID)
+	jailedOpts, err := s.jailer.BuildJailedMachine(s.machineConfig, s.config.FirecrackerBinaryPath)
 	if err != nil {
 		return errors.Wrap(err, "failed to build jailed machine options")
 	}
@@ -738,7 +738,7 @@ func (s *service) buildVMConfiguration(req *proto.CreateVMRequest) (*firecracker
 	}
 
 	// Create stub drives first and let stub driver handler manage the drives
-	stubDriveHandler, err := newStubDriveHandler(
+	stubDriveHandler, err := stubdrive.NewStubDriveHandler(
 		string(s.jailer.JailPath()),
 		s.logger, containerCount+len(req.DriveMounts),
 		s.jailer.StubDrivesOptions()...,
@@ -829,10 +829,7 @@ func (s *service) Create(requestCtx context.Context, request *taskAPI.CreateTask
 
 		driveID, err := s.stubDriveHandler.PatchStubDrive(requestCtx, s.machine, mnt.Source)
 		if err != nil {
-			if err == ErrDrivesExhausted {
-				return nil, errors.Wrapf(errdefs.ErrUnavailable, "no remaining stub drives to be used")
-			}
-			return nil, errors.Wrapf(err, "failed to mount %v", mnt.Source)
+			return nil, errors.Wrapf(err, "failed to mount container rootfs %v", mnt.Source)
 		}
 
 		_, err = s.driveMountClient.MountDrive(requestCtx, &drivemount.MountDriveRequest{

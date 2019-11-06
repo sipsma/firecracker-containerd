@@ -11,7 +11,7 @@
 // express or implied. See the License for the specific language governing
 // permissions and limitations under the License.
 
-package main
+package jailer
 
 import (
 	"context"
@@ -53,17 +53,13 @@ func TestBuildJailedRootHandler_Isolated(t *testing.T) {
 	defer firecrackerFd.Close()
 
 	l := logrus.NewEntry(logrus.New())
-	jailer, err := newRuncJailer(context.Background(), l, dir, "bin-path", 123, 456)
+	jailerIface, err := NewRuncJailer(context.Background(), l, dir, "bin-path", 123, 456)
 	require.NoError(t, err, "failed to create runc jailer")
+	jailer := jailerIface.(*runcJailer)
 
-	cfg := Config{
-		FirecrackerBinaryPath: firecrackerPath,
-		KernelImagePath:       kernelImagePath,
-		RootDrive:             rootDrivePath,
-	}
 	socketPath := "/path/to/api.socket"
 	vmID := "foo"
-	handler := jailer.BuildJailedRootHandler(&cfg, &socketPath, vmID)
+	handler := jailer.BuildJailedRootHandler(&socketPath, vmID, firecrackerPath)
 
 	machine := firecracker.Machine{
 		Cfg: firecracker.Config{

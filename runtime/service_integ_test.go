@@ -413,11 +413,8 @@ func TestMultipleVMs_Isolated(t *testing.T) {
 						shimDir, err := vm.ShimDir("default", strconv.Itoa(vmID))
 						require.NoError(t, err, "failed to get shim dir")
 
-						jailer := &runcJailer{
-							ociBundlePath: string(shimDir),
-						}
-						_, err = os.Stat(jailer.RootPath())
-						require.NoError(t, err, "failed to stat root path of jailer")
+						_, err = os.Stat(filepath.Join(shimDir.RootPath(), "config.json"))
+						require.NoError(t, err, "failed to stat jailer's runc config file")
 					}
 
 					// Verify each exec had the same stdout and use that value as the mount namespace that will be compared
@@ -826,7 +823,7 @@ func TestCreateTooManyContainers_Isolated(t *testing.T) {
 
 	// When we reuse a VM explicitly, we cannot start multiple containers unless we pre-allocate stub drives.
 	_, err = c2.NewTask(ctx, cio.NewCreator(cio.WithStreams(nil, &stdout, &stderr)))
-	assert.Equal("no remaining stub drives to be used: unavailable: unknown", err.Error())
+	assert.Contains(err.Error(), "There are no remaining stub drives to be used")
 	require.Error(t, err)
 }
 

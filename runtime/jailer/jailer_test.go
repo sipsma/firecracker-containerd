@@ -11,7 +11,7 @@
 // express or implied. See the License for the specific language governing
 // permissions and limitations under the License.
 
-package main
+package jailer
 
 import (
 	"os"
@@ -21,7 +21,7 @@ import (
 )
 
 func TestCopyFile_simple(t *testing.T) {
-	srcPath := "./firecracker-runc-config.json.example"
+	srcPath := "../firecracker-runc-config.json.example"
 	dstPath := "./test-copy-file"
 
 	const expectedMode = 0600
