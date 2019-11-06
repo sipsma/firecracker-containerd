@@ -11,7 +11,7 @@
 // express or implied. See the License for the specific language governing
 // permissions and limitations under the License.
 
-package main
+package stubdrive
 
 import (
 	"context"
@@ -36,14 +36,14 @@ const (
 var (
 	// ErrDrivesExhausted occurs when there are no more drives left to use. This
 	// can happen by calling PatchStubDrive greater than the number of drives.
-	ErrDrivesExhausted = fmt.Errorf("There are no remaining drives to be used")
+	ErrDrivesExhausted = fmt.Errorf("There are no remaining stub drives to be used")
 
 	// ErrDriveIDNil should never happen, but we safe guard against nil dereferencing
 	ErrDriveIDNil = fmt.Errorf("DriveID of current drive is nil")
 )
 
-// stubDriveHandler is used to manage stub drives.
-type stubDriveHandler struct {
+// StubDriveHandler is used to manage stub drives.
+type StubDriveHandler struct {
 	RootPath       string
 	stubDriveIndex int64
 	drives         []models.Drive
@@ -51,11 +51,11 @@ type stubDriveHandler struct {
 	mutex          sync.Mutex
 }
 
-// stubDrivesOpt is used to make and modify changes to the stub drives.
-type stubDrivesOpt func(stubDrives []models.Drive) error
+// StubDrivesOpt is used to make and modify changes to the stub drives.
+type StubDrivesOpt func(stubDrives []models.Drive) error
 
-func newStubDriveHandler(path string, logger *logrus.Entry, count int, opts ...stubDrivesOpt) (*stubDriveHandler, error) {
-	h := stubDriveHandler{
+func NewStubDriveHandler(path string, logger *logrus.Entry, count int, opts ...StubDrivesOpt) (*StubDriveHandler, error) {
+	h := StubDriveHandler{
 		RootPath: path,
 		logger:   logger,
 	}
@@ -74,7 +74,7 @@ func newStubDriveHandler(path string, logger *logrus.Entry, count int, opts ...s
 	return &h, nil
 }
 
-func (h *stubDriveHandler) createStubDrives(stubDriveCount int) ([]models.Drive, error) {
+func (h *StubDriveHandler) createStubDrives(stubDriveCount int) ([]models.Drive, error) {
 	paths, err := h.stubDrivePaths(stubDriveCount)
 	if err != nil {
 		return nil, err
@@ -95,7 +95,7 @@ func (h *stubDriveHandler) createStubDrives(stubDriveCount int) ([]models.Drive,
 
 // stubDrivePaths will create stub drives and return the paths associated with
 // the stub drives.
-func (h *stubDriveHandler) stubDrivePaths(count int) ([]string, error) {
+func (h *StubDriveHandler) stubDrivePaths(count int) ([]string, error) {
 	paths := []string{}
 	for i := 0; i < count; i++ {
 		driveID := fmt.Sprintf("stub%d", i)
@@ -111,7 +111,7 @@ func (h *stubDriveHandler) stubDrivePaths(count int) ([]string, error) {
 	return paths, nil
 }
 
-func (h *stubDriveHandler) createStubDrive(driveID, path string) error {
+func (h *StubDriveHandler) createStubDrive(driveID, path string) error {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
 		return err
@@ -161,13 +161,13 @@ func (h *stubDriveHandler) createStubDrive(driveID, path string) error {
 }
 
 // GetDrives returns the associated stub drives
-func (h *stubDriveHandler) GetDrives() []models.Drive {
+func (h *StubDriveHandler) GetDrives() []models.Drive {
 	return h.drives
 }
 
 // InDriveSet will iterate through all the stub drives and see if the path
 // exists on any of the drives
-func (h *stubDriveHandler) InDriveSet(path string) bool {
+func (h *StubDriveHandler) InDriveSet(path string) bool {
 	for _, d := range h.GetDrives() {
 		if firecracker.StringValue(d.PathOnHost) == path {
 			return true
@@ -178,7 +178,7 @@ func (h *stubDriveHandler) InDriveSet(path string) bool {
 }
 
 // PatchStubDrive will replace the next available stub drive with the provided drive
-func (h *stubDriveHandler) PatchStubDrive(ctx context.Context, client firecracker.MachineIface, pathOnHost string) (string, error) {
+func (h *StubDriveHandler) PatchStubDrive(ctx context.Context, client firecracker.MachineIface, pathOnHost string) (string, error) {
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
 

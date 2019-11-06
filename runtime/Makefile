@@ -48,7 +48,7 @@ integ-test:
 			--privileged \
 			--ipc=host \
 			--network=none \
-			--volume /dev:/dev \
+			--volume /hostdev:/dev \
 			--volume /run/udev/control:/run/udev/control \
 			--volume $(CURDIR)/logs:/var/log/firecracker-containerd-test \
 			--env ENABLE_ISOLATED_TESTS=1 \

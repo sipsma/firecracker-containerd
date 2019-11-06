@@ -23,6 +23,7 @@ import (
 
 	"github.com/firecracker-microvm/firecracker-containerd/internal/vm"
 	"github.com/firecracker-microvm/firecracker-containerd/proto"
+	"github.com/firecracker-microvm/firecracker-containerd/runtime/jailer"
 	"github.com/firecracker-microvm/firecracker-go-sdk"
 	models "github.com/firecracker-microvm/firecracker-go-sdk/client/models"
 	"github.com/sirupsen/logrus"
@@ -231,7 +232,7 @@ func TestBuildVMConfiguration(t *testing.T) {
 			defer os.RemoveAll(tempDir)
 
 			svc.shimDir = vm.Dir(tempDir)
-			svc.jailer = newNoopJailer(context.Background(), svc.logger, svc.shimDir)
+			svc.jailer = jailer.NewNoopJailer(context.Background(), svc.logger, svc.shimDir)
 
 			relSockPath, err := svc.shimDir.FirecrackerSockRelPath()
 			require.NoError(t, err, "failed to get firecracker sock rel path")
@@ -261,7 +262,7 @@ func TestBuildVMConfiguration(t *testing.T) {
 			assert.NoError(t, err)
 			require.Equal(t, tc.expectedCfg, actualCfg)
 
-			require.Equal(t, tc.expectedStubDriveCount, len(svc.stubDriveHandler.drives), "The stub driver only knows stub drives")
+			require.Equal(t, tc.expectedStubDriveCount, len(svc.stubDriveHandler.GetDrives()), "The stub driver only knows stub drives")
 		})
 	}
 }
@@ -323,7 +324,7 @@ func TestDebugConfig(t *testing.T) {
 		assert.NoError(t, err, "failed to create stub drive path")
 
 		c.service.shimDir = vm.Dir(stubDrivePath)
-		c.service.jailer = newNoopJailer(context.Background(), c.service.logger, c.service.shimDir)
+		c.service.jailer = jailer.NewNoopJailer(context.Background(), c.service.logger, c.service.shimDir)
 
 		req := proto.CreateVMRequest{}
 

@@ -11,12 +11,13 @@
 // express or implied. See the License for the specific language governing
 // permissions and limitations under the License.
 
-package main
+package jailer
 
 import (
 	"context"
 
 	"github.com/firecracker-microvm/firecracker-containerd/internal/vm"
+	"github.com/firecracker-microvm/firecracker-containerd/runtime/stubdrive"
 	"github.com/firecracker-microvm/firecracker-go-sdk"
 	"github.com/sirupsen/logrus"
 )
@@ -29,7 +30,7 @@ type noopJailer struct {
 	ctx     context.Context
 }
 
-func newNoopJailer(ctx context.Context, logger *logrus.Entry, shimDir vm.Dir) noopJailer {
+func NewNoopJailer(ctx context.Context, logger *logrus.Entry, shimDir vm.Dir) Jailer {
 	return noopJailer{
 		logger:  logger,
 		shimDir: shimDir,
@@ -37,8 +38,8 @@ func newNoopJailer(ctx context.Context, logger *logrus.Entry, shimDir vm.Dir) no
 	}
 }
 
-func (j noopJailer) BuildJailedMachine(cfg *Config, machineConfig *firecracker.Config, vmID string) ([]firecracker.Opt, error) {
-	if len(cfg.FirecrackerBinaryPath) == 0 {
+func (j noopJailer) BuildJailedMachine(machineConfig *firecracker.Config, firecrackerBinaryPath string) ([]firecracker.Opt, error) {
+	if len(firecrackerBinaryPath) == 0 {
 		return []firecracker.Opt{}, nil
 	}
 
@@ -48,11 +49,11 @@ func (j noopJailer) BuildJailedMachine(cfg *Config, machineConfig *firecracker.C
 	}
 
 	cmd := firecracker.VMCommandBuilder{}.
-		WithBin(cfg.FirecrackerBinaryPath).
+		WithBin(firecrackerBinaryPath).
 		WithSocketPath(relSocketPath).
 		Build(j.ctx)
 
-	if cfg.Debug {
+	if machineConfig.Debug {
 		cmd.Stdout = j.logger.WithField("vmm_stream", "stdout").WriterLevel(logrus.DebugLevel)
 		cmd.Stderr = j.logger.WithField("vmm_stream", "stderr").WriterLevel(logrus.DebugLevel)
 	}
@@ -73,7 +74,7 @@ func (j noopJailer) ExposeFileToJail(path string) error {
 	return nil
 }
 
-func (j noopJailer) StubDrivesOptions() []stubDrivesOpt {
+func (j noopJailer) StubDrivesOptions() []stubdrive.StubDrivesOpt {
 	j.logger.Debug("noop operation for StubDrivesOptions")
-	return []stubDrivesOpt{}
+	return []stubdrive.StubDrivesOpt{}
 }

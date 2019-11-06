@@ -11,7 +11,7 @@
 // express or implied. See the License for the specific language governing
 // permissions and limitations under the License.
 
-package main
+package stubdrive
 
 import (
 	"context"
@@ -40,7 +40,7 @@ func TestStubDriveHandler(t *testing.T) {
 	}()
 
 	logger := log.G(context.Background())
-	handler, err := newStubDriveHandler(tempPath, logger, 5)
+	handler, err := NewStubDriveHandler(tempPath, logger, 5)
 	assert.NoError(t, err)
 	assert.Equal(t, 5, len(handler.GetDrives()))
 
@@ -71,7 +71,7 @@ func TestPatchStubDrive(t *testing.T) {
 	client, err := firecracker.NewMachine(ctx, firecracker.Config{}, firecracker.WithClient(fcClient))
 	assert.NoError(t, err, "failed to create new machine")
 
-	handler := stubDriveHandler{
+	handler := StubDriveHandler{
 		drives: []models.Drive{
 			{
 				DriveID:    firecracker.String("stub0"),
@@ -113,7 +113,7 @@ func TestPatchStubDrive_concurrency(t *testing.T) {
 	client, err := firecracker.NewMachine(ctx, firecracker.Config{}, firecracker.WithClient(fcClient))
 	assert.NoError(t, err, "failed to create new machine")
 
-	handler := stubDriveHandler{
+	handler := StubDriveHandler{
 		drives: []models.Drive{
 			{
 				DriveID:    firecracker.String("stub0"),
@@ -235,7 +235,7 @@ func TestCreateStubDrive(t *testing.T) {
 		c := c // see https://github.com/kyoh86/scopelint/issues/4
 		t.Run(c.Name, func(t *testing.T) {
 			logger := log.G(context.Background())
-			handler, err := newStubDriveHandler(path, logger, 0)
+			handler, err := NewStubDriveHandler(path, logger, 0)
 			assert.NoError(t, err)
 
 			stubDrivePath := filepath.Join(path, c.Name)

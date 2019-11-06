@@ -11,7 +11,7 @@
 // express or implied. See the License for the specific language governing
 // permissions and limitations under the License.
 
-package main
+package jailer
 
 import (
 	"context"
@@ -33,6 +33,7 @@ import (
 
 	"github.com/firecracker-microvm/firecracker-containerd/internal"
 	"github.com/firecracker-microvm/firecracker-containerd/internal/vm"
+	"github.com/firecracker-microvm/firecracker-containerd/runtime/stubdrive"
 )
 
 // runcJailer uses runc to set up a jailed environment for the Firecracker VM.
@@ -50,7 +51,7 @@ type runcJailer struct {
 
 const firecrackerFileName = "firecracker"
 
-func newRuncJailer(ctx context.Context, logger *logrus.Entry, ociBundlePath, runcBinPath string, uid, gid uint32) (*runcJailer, error) {
+func NewRuncJailer(ctx context.Context, logger *logrus.Entry, ociBundlePath, runcBinPath string, uid, gid uint32) (Jailer, error) {
 	l := logger.WithField("ociBundlePath", ociBundlePath).
 		WithField("runcBinaryPath", runcBinPath)
 
@@ -94,14 +95,16 @@ func (j runcJailer) JailPath() vm.Dir {
 // BuildJailedMachine will return the needed options for a jailed Firecracker
 // instance. In addition, some configuration values will be overwritten to the
 // jailed values, like SocketPath in the machineConfig.
-func (j *runcJailer) BuildJailedMachine(cfg *Config, machineConfig *firecracker.Config, vmID string) ([]firecracker.Opt, error) {
-	handler := j.BuildJailedRootHandler(cfg, &machineConfig.SocketPath, vmID)
+func (j *runcJailer) BuildJailedMachine(machineConfig *firecracker.Config, firecrackerBinaryPath string) ([]firecracker.Opt, error) {
+	vmID := machineConfig.VMID
+
+	handler := j.BuildJailedRootHandler(&machineConfig.SocketPath, vmID, firecrackerBinaryPath)
 	fifoHandler := j.BuildLinkFifoHandler()
 	// Build a new client since BuildJailedRootHandler modifies the socket path value.
 	client := firecracker.NewClient(machineConfig.SocketPath, j.logger, machineConfig.Debug)
 
 	opts := []firecracker.Opt{
-		firecracker.WithProcessRunner(j.jailerCommand(vmID, cfg.Debug)),
+		firecracker.WithProcessRunner(j.jailerCommand(vmID, machineConfig.Debug)),
 		firecracker.WithClient(client),
 		func(m *firecracker.Machine) {
 			m.Handlers.FcInit = m.Handlers.FcInit.Prepend(handler)
@@ -120,7 +123,7 @@ func (j *runcJailer) BuildJailedMachine(cfg *Config, machineConfig *firecracker.
 
 // BuildJailedRootHandler will populate the jail with the necessary files, which may be
 // device nodes, hard links, and/or bind-mount targets
-func (j *runcJailer) BuildJailedRootHandler(cfg *Config, socketPath *string, vmID string) firecracker.Handler {
+func (j *runcJailer) BuildJailedRootHandler(socketPath *string, vmID string, firecrackerBinaryPath string) firecracker.Handler {
 	ociBundlePath := j.OCIBundlePath()
 	rootPath := j.RootPath()
 	*socketPath = filepath.Join(rootPath, "api.socket")
@@ -136,14 +139,14 @@ func (j *runcJailer) BuildJailedRootHandler(cfg *Config, socketPath *string, vmI
 			}
 
 			j.logger.Debug("Overwritting process args of config")
-			if err := j.overwriteConfig(cfg, filepath.Base(m.Cfg.SocketPath), rootPathToConfig); err != nil {
+			if err := j.overwriteConfig(filepath.Base(m.Cfg.SocketPath), rootPathToConfig); err != nil {
 				return errors.Wrap(err, "failed to overwrite config.json")
 			}
 
 			// copy the firecracker binary
 			j.logger.WithField("root path", rootPath).Debug("copying firecracker binary")
 			newFirecrackerBinPath := filepath.Join(rootPath, firecrackerFileName)
-			if err := j.copyFileToJail(cfg.FirecrackerBinaryPath, newFirecrackerBinPath, 0500); err != nil {
+			if err := j.copyFileToJail(firecrackerBinaryPath, newFirecrackerBinPath, 0500); err != nil {
 				return err
 			}
 
@@ -232,8 +235,8 @@ func (j runcJailer) BuildLinkFifoHandler() firecracker.Handler {
 
 // StubDrivesOptions will return a set of options used to create a new stub
 // drive handler.
-func (j runcJailer) StubDrivesOptions() []stubDrivesOpt {
-	return []stubDrivesOpt{
+func (j runcJailer) StubDrivesOptions() []stubdrive.StubDrivesOpt {
+	return []stubdrive.StubDrivesOpt{
 		func(drives []models.Drive) error {
 			for _, drive := range drives {
 				path := firecracker.StringValue(drive.PathOnHost)
@@ -355,7 +358,7 @@ func (j runcJailer) jailerCommand(containerName string, isDebug bool) *exec.Cmd 
 // overwriteConfig will set the proper default values if a field had not been set.
 //
 // TODO: Add netns
-func (j runcJailer) overwriteConfig(cfg *Config, socketPath, configPath string) error {
+func (j runcJailer) overwriteConfig(socketPath, configPath string) error {
 	spec := specs.Spec{}
 	configBytes, err := ioutil.ReadFile(configPath)
 	if err != nil {
@@ -375,7 +378,7 @@ func (j runcJailer) overwriteConfig(cfg *Config, socketPath, configPath string) 
 		)
 	}
 
-	spec = j.setDefaultConfigValues(cfg, socketPath, spec)
+	spec = j.setDefaultConfigValues(socketPath, spec)
 
 	spec.Root.Path = rootfsFolder
 	spec.Root.Readonly = false
@@ -396,7 +399,7 @@ func (j runcJailer) overwriteConfig(cfg *Config, socketPath, configPath string) 
 
 // setDefaultConfigValues will process the spec file provided and allow any
 // empty/zero values to be replaced with default values.
-func (j runcJailer) setDefaultConfigValues(cfg *Config, socketPath string, spec specs.Spec) specs.Spec {
+func (j runcJailer) setDefaultConfigValues(socketPath string, spec specs.Spec) specs.Spec {
 	if spec.Process == nil {
 		spec.Process = &specs.Process{}
 	}
