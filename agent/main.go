@@ -26,6 +26,8 @@ import (
 	taskAPI "github.com/containerd/containerd/runtime/v2/task"
 	"github.com/containerd/containerd/sys/reaper"
 	"github.com/containerd/ttrpc"
+	_ "github.com/firecracker-microvm/firecracker-go-sdk"
+	_ "github.com/firecracker-microvm/firecracker-go-sdk/client/models"
 	"github.com/opencontainers/runc/libcontainer/system"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
