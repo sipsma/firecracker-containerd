@@ -11,7 +11,7 @@
 // express or implied. See the License for the specific language governing
 // permissions and limitations under the License.
 
-package main
+package convert
 
 import (
 	"net"
@@ -25,14 +25,8 @@ import (
 	"github.com/firecracker-microvm/firecracker-containerd/proto"
 )
 
-func machineConfigurationFromProto(cfg *Config, req *proto.FirecrackerMachineConfiguration) models.MachineConfiguration {
-	config := models.MachineConfiguration{
-		CPUTemplate: models.CPUTemplate(cfg.CPUTemplate),
-		VcpuCount:   firecracker.Int64(int64(cfg.CPUCount)),
-		MemSizeMib:  firecracker.Int64(defaultMemSizeMb),
-		HtEnabled:   firecracker.Bool(cfg.HtEnabled),
-	}
-
+func MachineConfigurationFromProto(req *proto.FirecrackerMachineConfiguration) models.MachineConfiguration {
+	config := models.MachineConfiguration{}
 	if req == nil {
 		return config
 	}
@@ -54,19 +48,19 @@ func machineConfigurationFromProto(cfg *Config, req *proto.FirecrackerMachineCon
 	return config
 }
 
-// networkConfigFromProto creates a firecracker NetworkInterface object from
+// NetworkConfigFromProto creates a firecracker NetworkInterface object from
 // the protobuf FirecrackerNetworkInterface message.
-func networkConfigFromProto(nwIface *proto.FirecrackerNetworkInterface, vmID string) (*firecracker.NetworkInterface, error) {
+func NetworkConfigFromProto(nwIface *proto.FirecrackerNetworkInterface, vmID string) (*firecracker.NetworkInterface, error) {
 	result := &firecracker.NetworkInterface{
 		AllowMMDS: nwIface.AllowMMDS,
 	}
 
 	if nwIface.InRateLimiter != nil {
-		result.InRateLimiter = rateLimiterFromProto(nwIface.InRateLimiter)
+		result.InRateLimiter = RateLimiterFromProto(nwIface.InRateLimiter)
 	}
 
 	if nwIface.OutRateLimiter != nil {
-		result.OutRateLimiter = rateLimiterFromProto(nwIface.OutRateLimiter)
+		result.OutRateLimiter = RateLimiterFromProto(nwIface.OutRateLimiter)
 	}
 
 	if staticConf := nwIface.StaticConfig; staticConf != nil {
@@ -112,33 +106,33 @@ func networkConfigFromProto(nwIface *proto.FirecrackerNetworkInterface, vmID str
 	return result, nil
 }
 
-// rateLimiterFromProto creates a firecracker RateLimiter object from the
+// RateLimiterFromProto creates a firecracker RateLimiter object from the
 // protobuf message.
-func rateLimiterFromProto(rl *proto.FirecrackerRateLimiter) *models.RateLimiter {
+func RateLimiterFromProto(rl *proto.FirecrackerRateLimiter) *models.RateLimiter {
 	result := models.RateLimiter{}
 	if rl.Bandwidth != nil {
-		result.Bandwidth = tokenBucketFromProto(rl.Bandwidth)
+		result.Bandwidth = TokenBucketFromProto(rl.Bandwidth)
 	}
 
 	if rl.Ops != nil {
-		result.Ops = tokenBucketFromProto(rl.Ops)
+		result.Ops = TokenBucketFromProto(rl.Ops)
 	}
 
 	return &result
 }
 
-func withRateLimiterFromProto(rl *proto.FirecrackerRateLimiter) firecracker.DriveOpt {
+func WithRateLimiterFromProto(rl *proto.FirecrackerRateLimiter) firecracker.DriveOpt {
 	if rl == nil {
 		return func(d *models.Drive) {
 			// no-op
 		}
 	}
-	return firecracker.WithRateLimiter(*rateLimiterFromProto(rl))
+	return firecracker.WithRateLimiter(*RateLimiterFromProto(rl))
 }
 
-// tokenBucketFromProto creates a firecracker TokenBucket object from the
+// TokenBucketFromProto creates a firecracker TokenBucket object from the
 // protobuf message.
-func tokenBucketFromProto(bucket *proto.FirecrackerTokenBucket) *models.TokenBucket {
+func TokenBucketFromProto(bucket *proto.FirecrackerTokenBucket) *models.TokenBucket {
 	builder := firecracker.TokenBucketBuilder{}
 	if bucket.OneTimeBurst > 0 {
 		builder = builder.WithInitialSize(bucket.OneTimeBurst)

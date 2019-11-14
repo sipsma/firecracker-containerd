@@ -144,7 +144,14 @@ message FirecrackerDriveMount {
   // within the VM (i.e. ["rw", "noatime"]). Defaults to none if not specified. 
   repeated string Options = 4;
 
-  // TODO support for ratelimiters and read-only drives (issue #296)
+  // (Optional) RateLimiter configuration that will be applied to the
+  // backing-drive for the VM's rootfs
+  FirecrackerRateLimiter RateLimiter = 5;
+
+  // (Optional) If set to true, IsReadOnly results in the backing file for the
+  // drive being opened as read-only by the Firecracker VMM on the host, preventing
+  // any writes to the image from within the guest.
+  bool IsReadOnly = 6;
 }
 
 // Message to specify an IO rate limiter with bytes/s and ops/s limits

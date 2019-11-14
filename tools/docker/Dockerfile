@@ -111,7 +111,8 @@ RUN mkdir -p /var/lib/firecracker-containerd/runtime \
 	"https://s3.amazonaws.com/spec.ccfc.min/img/hello/kernel/hello-vmlinux.bin" \
 	&& echo "882fa465c43ab7d92e31bd4167da3ad6a82cb9230f9b0016176df597c6014cef default-vmlinux.bin" | sha256sum -c - \
 	&& chmod 0444 default-vmlinux.bin \
-	&& mv default-vmlinux.bin /var/lib/firecracker-containerd/runtime/default-vmlinux.bin
+  && mv default-vmlinux.bin /var/lib/firecracker-containerd/runtime/default-vmlinux.bin
+
 
 COPY --from=firecracker-containerd-build /home/builder/firecracker-containerd /firecracker-containerd
 COPY tools/image-builder/rootfs.img /var/lib/firecracker-containerd/runtime/default-rootfs.img

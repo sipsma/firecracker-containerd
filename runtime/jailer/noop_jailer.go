@@ -17,7 +17,6 @@ import (
 	"context"
 
 	"github.com/firecracker-microvm/firecracker-containerd/internal/vm"
-	"github.com/firecracker-microvm/firecracker-containerd/runtime/stubdrive"
 	"github.com/firecracker-microvm/firecracker-go-sdk"
 	"github.com/sirupsen/logrus"
 )
@@ -74,7 +73,7 @@ func (j noopJailer) ExposeFileToJail(path string) error {
 	return nil
 }
 
-func (j noopJailer) StubDrivesOptions() []stubdrive.StubDrivesOpt {
+func (j noopJailer) StubDrivesOptions() []FileOpt {
 	j.logger.Debug("noop operation for StubDrivesOptions")
-	return []stubdrive.StubDrivesOpt{}
+	return []FileOpt{}
 }

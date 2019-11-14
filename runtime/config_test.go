@@ -22,6 +22,11 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+const (
+	memSize   = 4096
+	vcpuCount = 2
+)
+
 func TestLoadConfigDefaults(t *testing.T) {
 	configContent := `{}`
 	configFile, cleanup := createTempConfig(t, configContent)
@@ -75,3 +80,85 @@ func createTempConfig(t *testing.T, contents string) (string, func()) {
 	}
 	return configFile.Name(), func() { os.Remove(configFile.Name()) }
 }
+
+/* TODO
+func TestMachineConfigurationFromProto(t *testing.T) {
+	testcases := []struct {
+		name                  string
+		config                *Config
+		proto                 *proto.FirecrackerMachineConfiguration
+		expectedMachineConfig models.MachineConfiguration
+	}{
+		{
+			name:   "ProtoOnly",
+			config: &Config{},
+			proto: &proto.FirecrackerMachineConfiguration{
+				CPUTemplate: string(models.CPUTemplateC3),
+				VcpuCount:   vcpuCount,
+				MemSizeMib:  memSize,
+				HtEnabled:   true,
+			},
+			expectedMachineConfig: models.MachineConfiguration{
+				CPUTemplate: models.CPUTemplateC3,
+				VcpuCount:   firecracker.Int64(vcpuCount),
+				MemSizeMib:  firecracker.Int64(memSize),
+				HtEnabled:   firecracker.Bool(true),
+			},
+		},
+		{
+			name: "ConfigOnly",
+			config: &Config{
+				CPUTemplate: "C3",
+				CPUCount:    vcpuCount,
+			},
+			proto: &proto.FirecrackerMachineConfiguration{},
+			expectedMachineConfig: models.MachineConfiguration{
+				CPUTemplate: models.CPUTemplateC3,
+				VcpuCount:   firecracker.Int64(vcpuCount),
+				MemSizeMib:  firecracker.Int64(defaultMemSizeMb),
+				HtEnabled:   firecracker.Bool(false),
+			},
+		},
+		{
+			name: "NilProto",
+			config: &Config{
+				CPUTemplate: "C3",
+				CPUCount:    vcpuCount,
+			},
+			expectedMachineConfig: models.MachineConfiguration{
+				CPUTemplate: models.CPUTemplateC3,
+				VcpuCount:   firecracker.Int64(vcpuCount),
+				MemSizeMib:  firecracker.Int64(defaultMemSizeMb),
+				HtEnabled:   firecracker.Bool(false),
+			},
+		},
+		{
+			name: "Overrides",
+			config: &Config{
+				CPUTemplate: "T2",
+				CPUCount:    vcpuCount + 1,
+			},
+			proto: &proto.FirecrackerMachineConfiguration{
+				CPUTemplate: string(models.CPUTemplateC3),
+				VcpuCount:   vcpuCount,
+				MemSizeMib:  memSize,
+				HtEnabled:   true,
+			},
+			expectedMachineConfig: models.MachineConfiguration{
+				CPUTemplate: models.CPUTemplateC3,
+				VcpuCount:   firecracker.Int64(vcpuCount),
+				MemSizeMib:  firecracker.Int64(memSize),
+				HtEnabled:   firecracker.Bool(true),
+			},
+		},
+	}
+
+	for _, tc := range testcases {
+		tc := tc // see https://github.com/kyoh86/scopelint/issues/4
+		t.Run(tc.name, func(t *testing.T) {
+			machineConfig := machineConfigurationFromProto(tc.config, tc.proto)
+			assert.Equal(t, tc.expectedMachineConfig, machineConfig)
+		})
+	}
+}
+*/

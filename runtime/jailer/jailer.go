@@ -15,13 +15,13 @@ package jailer
 
 import (
 	"context"
+	"os"
 
 	"github.com/firecracker-microvm/firecracker-go-sdk"
 	"github.com/sirupsen/logrus"
 
 	"github.com/firecracker-microvm/firecracker-containerd/internal/vm"
 	"github.com/firecracker-microvm/firecracker-containerd/proto"
-	"github.com/firecracker-microvm/firecracker-containerd/runtime/stubdrive"
 )
 
 const (
@@ -56,8 +56,10 @@ type Jailer interface {
 	JailPath() vm.Dir
 	// StubDrivesOptions will return a set of options used to create a new stub
 	// drive handler.
-	StubDrivesOptions() []stubdrive.StubDrivesOpt
+	StubDrivesOptions() []FileOpt
 }
+
+type FileOpt func(*os.File) error
 
 // NewJailer is used to construct a Jailer from the CreateVM request. If no
 // request or jailer config was provided, then the noopJailer will be returned.
