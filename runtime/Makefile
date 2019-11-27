@@ -21,7 +21,7 @@ DOCKER_IMAGE_TAG?=latest
 GO_CACHE_VOLUME_NAME?=gocache
 FIRECRACKER_CONTAINERD_TEST_IMAGE?=localhost/firecracker-containerd-test
 
-INTEG_TEST_SUFFIX := _Isolated
+INTEG_TEST_SUFFIX := TestMultipleVMs_Isolated
 INTEG_TESTNAMES=$(shell docker run --rm \
 	--network=none \
 	--volume $(CURDIR)/..:/src \
@@ -67,6 +67,7 @@ integ-test-%: logs
 		--init \
 		$(FIRECRACKER_CONTAINERD_TEST_IMAGE):$(DOCKER_IMAGE_TAG) \
 		"go test $(EXTRAGOARGS) -run '^$(subst integ-test-,,$@)$$'"
+	false
 
 logs:
 	mkdir logs

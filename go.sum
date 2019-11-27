@@ -29,8 +29,6 @@ github.com/containerd/continuity v0.0.0-20181027224239-bea7585dbfac h1:PThQaO4yC
 github.com/containerd/continuity v0.0.0-20181027224239-bea7585dbfac/go.mod h1:GL3xCUCBDV3CZiTSEKksMWbLE66hEyuu9qyDOOqM47Y=
 github.com/containerd/fifo v0.0.0-20190816180239-bda0ff6ed73c h1:KFbqHhDeaHM7IfFtXHfUHMDaUStpM2YwBR+iJCIOsKk=
 github.com/containerd/fifo v0.0.0-20190816180239-bda0ff6ed73c/go.mod h1:ODA38xgv3Kuk8dQz2ZQXpnv/UZZUHUCL7pnLehbXgQI=
-github.com/containerd/go-runc v0.0.0-20190226155025-7d11b49dc076 h1:biYGul6kwz5/Lh6UxkYQyRKPeYA/ZL5n2pdCAcYUpLA=
-github.com/containerd/go-runc v0.0.0-20190226155025-7d11b49dc076/go.mod h1:IV7qH3hrUgRmyYrtgEeGWJfWbgcHL9CSRruz2Vqcph0=
 github.com/containerd/ttrpc v0.0.0-20190613183316-1fb3814edf44 h1:vG5QXCUakUhR2CRI44aD3joCWcvb5mfZRxcwVqBVGeU=
 github.com/containerd/ttrpc v0.0.0-20190613183316-1fb3814edf44/go.mod h1:PvCDdDGpgqzQIzDW1TphrGLssLDZp2GuS+X5DkEJB8o=
 github.com/containerd/typeurl v0.0.0-20181015155603-461401dc8f19 h1:gzdItdct+4eLnZxiZi1YcIXx3uo5QWa/xXKnsldEqY8=
@@ -178,6 +176,8 @@ github.com/shirou/gopsutil v2.18.12+incompatible h1:1eaJvGomDnH74/5cF4CTmTbLHAri
 github.com/shirou/gopsutil v2.18.12+incompatible/go.mod h1:5b4v6he4MtMOwMlS0TUMTu2PcXUg8+E1lC7eC3UO/RA=
 github.com/shirou/w32 v0.0.0-20160930032740-bb4de0191aa4 h1:udFKJ0aHUL60LboW/A+DfgoHVedieIzIXE8uylPue0U=
 github.com/shirou/w32 v0.0.0-20160930032740-bb4de0191aa4/go.mod h1:qsXQc7+bwAM3Q1u/4XEfrquwF8Lw7D7y5cD8CuHnfIc=
+github.com/sipsma/go-runc v0.0.0-20191127023547-225dba04855e h1:nLnlVFru4joK5hb6mjTtIrh2Ia5vb/TsauBYjL5rjCA=
+github.com/sipsma/go-runc v0.0.0-20191127023547-225dba04855e/go.mod h1:OZujPhV77Wsx9mtN7JHCTNJ4/7sASWe/o4+eH4A9ywU=
 github.com/sirupsen/logrus v1.0.6/go.mod h1:pMByvHTf9Beacp5x1UXfOR9xyW/9antXMhjMPG0dEzc=
 github.com/sirupsen/logrus v1.1.1/go.mod h1:zrgwTnHtNr00buQ1vSptGe8m1f/BbgsPukg8qsT7A+A=
 github.com/sirupsen/logrus v1.4.1 h1:GL2rEmy6nsikmW0r8opw9JIRScdMF5hA8cOYLH7In1k=
