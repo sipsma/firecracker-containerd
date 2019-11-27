@@ -222,22 +222,22 @@ func TestMultipleVMs_Isolated(t *testing.T) {
 		JailerConfig  *proto.JailerConfig
 	}{
 		{
-			MaxContainers: 5,
+			MaxContainers: 8,
 		},
 		{
-			MaxContainers: 5,
+			MaxContainers: 8,
 		},
 		{
-			MaxContainers: 5,
+			MaxContainers: 8,
 		},
 		{
-			MaxContainers: 3,
+			MaxContainers: 8,
 			JailerConfig: &proto.JailerConfig{
 				NetNS: netns.Path(),
 			},
 		},
 		{
-			MaxContainers: 3,
+			MaxContainers: 8,
 			JailerConfig: &proto.JailerConfig{
 				NetNS: netns.Path(),
 			},
