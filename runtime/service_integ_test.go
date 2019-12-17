@@ -101,6 +101,186 @@ func iperf3Image(ctx context.Context, client *containerd.Client, snapshotterName
 	return unpackImage(ctx, client, snapshotterName, "docker.io/mlabbe/iperf3:3.6-r0")
 }
 
+func TestEBADF_Isolated(t *testing.T) {
+	prepareIntegTest(t, withJailer())
+
+	testTimeout := 3600 * time.Hour
+	ctx, testCancel := context.WithTimeout(namespaces.WithNamespace(context.Background(), defaultNamespace), testTimeout)
+	defer testCancel()
+
+	client, err := containerd.New(containerdSockPath, containerd.WithDefaultRuntime(firecrackerRuntime))
+	require.NoError(t, err, "unable to create client to containerd service at %s, is containerd running?", containerdSockPath)
+	defer client.Close()
+
+	image, err := alpineImage(ctx, client, defaultSnapshotterName())
+	require.NoError(t, err, "failed to get alpine image")
+
+	pluginClient, err := ttrpcutil.NewClient(containerdSockPath + ".ttrpc")
+	require.NoError(t, err, "failed to create ttrpc client")
+	fcClient := fccontrol.NewFirecrackerClient(pluginClient.Client())
+
+	var idMu sync.Mutex
+	var _vmID int
+	getVMID := func() int {
+		idMu.Lock()
+		defer idMu.Unlock()
+		_vmID += 1
+		return _vmID
+	}
+
+	const maxVMs = 100
+	const containerCount = 8
+	const execCount = 2
+
+	vmSem := make(chan struct{}, maxVMs)
+vmLoop:
+	for {
+		select {
+		case vmSem <- struct{}{}:
+		case <-ctx.Done():
+			break vmLoop
+		}
+
+		vmID := getVMID()
+
+		go func(ctx context.Context, image containerd.Image, fcClient fccontrol.FirecrackerService, client *containerd.Client, vmID int) {
+			t.Run(strconv.Itoa(vmID), func(t *testing.T) {
+				ctx, cancel := context.WithTimeout(namespaces.WithNamespace(ctx, defaultNamespace), 300*time.Second)
+				defer cancel()
+
+				defer func() {
+					<-vmSem
+				}()
+
+				_, err := fcClient.CreateVM(ctx, &proto.CreateVMRequest{
+					VMID: strconv.Itoa(vmID),
+					MachineCfg: &proto.FirecrackerMachineConfiguration{
+						VcpuCount:  4,
+						MemSizeMib: 4096,
+					},
+					RootDrive: &proto.FirecrackerRootDrive{
+						HostPath: defaultVMRootfsPath,
+					},
+					ContainerCount: containerCount,
+				})
+				require.NoError(t, err, "failed to create vm")
+				t.Logf("started VM %d", vmID)
+
+				containerID := 0
+				containerName := fmt.Sprintf("container-%d-%d", vmID, containerID)
+				snapshotName := fmt.Sprintf("snapshot-%d-%d", vmID, containerID)
+
+				newContainer, err := client.NewContainer(ctx,
+					containerName,
+					containerd.WithSnapshotter(defaultSnapshotterName()),
+					containerd.WithNewSnapshotView(snapshotName, image),
+					containerd.WithNewSpec(
+						// oci.WithProcessArgs("/bin/sleep", "3600"),
+						oci.WithProcessArgs("/bin/true"),
+						firecrackeroci.WithVMID(strconv.Itoa(vmID)),
+					),
+				)
+				require.NoError(t, err, "failed to create container")
+
+				var taskStdout bytes.Buffer
+				var taskStderr bytes.Buffer
+
+				newTask, err := newContainer.NewTask(ctx,
+					cio.NewCreator(cio.WithStreams(nil, &taskStdout, &taskStderr)))
+				require.NoError(t, err, "failed to create task")
+
+				taskExitCh, err := newTask.Wait(ctx)
+				require.NoError(t, err, "failed to wait on task")
+
+				err = newTask.Start(ctx)
+				require.NoError(t, err, "failed to start task")
+				t.Logf("started task %s", containerName)
+
+				select {
+				case <-taskExitCh:
+					t.Logf("exit from task %s", containerName)
+
+					_, err = newTask.Delete(ctx)
+					if err != nil && strings.Contains(err.Error(), "bad file descriptor") {
+						testCancel()
+					}
+					require.NoError(t, err, "failed to delete task")
+					t.Logf("deleted task %s", containerName)
+
+				case <-ctx.Done():
+					require.Fail(t, "context cancelled",
+						"context cancelled while waiting for container %s to exit, err: %v", containerName, ctx.Err())
+				}
+
+				var containerWg sync.WaitGroup
+				for containerID := 1; containerID < containerCount; containerID++ {
+					containerWg.Add(1)
+					go func(ctx context.Context, containerID int, vmID int, image containerd.Image, client *containerd.Client) {
+						defer containerWg.Done()
+						containerName := fmt.Sprintf("container-%d-%d", vmID, containerID)
+						snapshotName := fmt.Sprintf("snapshot-%d-%d", vmID, containerID)
+
+						newContainer, err := client.NewContainer(ctx,
+							containerName,
+							containerd.WithSnapshotter(defaultSnapshotterName()),
+							containerd.WithNewSnapshotView(snapshotName, image),
+							containerd.WithNewSpec(
+								// oci.WithProcessArgs("/bin/sleep", "3600"),
+								oci.WithProcessArgs("/bin/true"),
+								firecrackeroci.WithVMID(strconv.Itoa(vmID)),
+							),
+						)
+						require.NoError(t, err, "failed to create container")
+
+						var taskStdout bytes.Buffer
+						var taskStderr bytes.Buffer
+
+						newTask, err := newContainer.NewTask(ctx,
+							cio.NewCreator(cio.WithStreams(nil, &taskStdout, &taskStderr)))
+						require.NoError(t, err, "failed to create task")
+
+						taskExitCh, err := newTask.Wait(ctx)
+						require.NoError(t, err, "failed to wait on task")
+
+						err = newTask.Start(ctx)
+						require.NoError(t, err, "failed to start task")
+						t.Logf("started task %s", containerName)
+
+						select {
+						case <-taskExitCh:
+							t.Logf("exit from task %s", containerName)
+
+							_, err = newTask.Delete(ctx)
+							if err != nil && strings.Contains(err.Error(), "bad file descriptor") {
+								testCancel()
+							}
+							require.NoError(t, err, "failed to delete task")
+							t.Logf("deleted task %s", containerName)
+
+						case <-ctx.Done():
+							require.Fail(t, "context cancelled",
+								"context cancelled while waiting for container %s to exit, err: %v", containerName, ctx.Err())
+						}
+
+					}(ctx, containerID, vmID, image, client)
+				}
+
+				containerWg.Wait()
+
+				_, err = fcClient.StopVM(ctx, &proto.StopVMRequest{VMID: strconv.Itoa(vmID), TimeoutSeconds: 20})
+				require.NoError(t, err, "failed to stop VM")
+				t.Logf("stopped VM %d", vmID)
+
+			})
+
+		}(ctx, image, fcClient, client, vmID)
+	}
+
+	for i := 0; i < maxVMs; i++ {
+		vmSem <- struct{}{}
+	}
+}
+
 func TestShimExitsUponContainerDelete_Isolated(t *testing.T) {
 	prepareIntegTest(t)
 
@@ -253,7 +433,7 @@ func TestMultipleVMs_Isolated(t *testing.T) {
 		},
 	}
 
-	testTimeout := 600 * time.Second
+	testTimeout := 180 * time.Second
 	ctx, cancel := context.WithTimeout(namespaces.WithNamespace(context.Background(), defaultNamespace), testTimeout)
 	defer cancel()
 
@@ -291,8 +471,8 @@ func TestMultipleVMs_Isolated(t *testing.T) {
 				VMID: vmIDStr,
 				// Enabling Go Race Detector makes in-microVM binaries heavy in terms of CPU and memory.
 				MachineCfg: &proto.FirecrackerMachineConfiguration{
-					VcpuCount:  4,
-					MemSizeMib: 4096,
+					VcpuCount:  1,
+					MemSizeMib: 512,
 				},
 				RootDrive: &proto.FirecrackerRootDrive{
 					HostPath: rootfsPath,
@@ -466,6 +646,9 @@ func testMultipleExecs(
 	select {
 	case <-taskExitCh:
 		_, err = newTask.Delete(ctx)
+		if err != nil {
+			t.Logf("%v", err)
+		}
 		require.NoError(t, err, "failed to delete task %q", containerName)
 
 		// if there was anything on stderr, print it to assist debugging

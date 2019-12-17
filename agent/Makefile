@@ -22,7 +22,7 @@ all: agent
 
 agent: *.go $(GOMOD) $(GOSUM)
 ifneq ($(STATIC_AGENT),)
-	CGO_ENABLED=0 go build -installsuffix cgo -a -ldflags "-s" $(EXTRAGOARGS) -o agent
+	CGO_ENABLED=0 go build -installsuffix cgo -a $(EXTRAGOARGS) -o agent
 else
 	go build $(EXTRAGOARGS) -o agent
 endif

@@ -20,4 +20,4 @@ SuccessAction=reboot
 [Service]
 Type=simple
 WorkingDirectory=/container
-ExecStart=/usr/local/bin/agent
+ExecStart=strace -f -D -s 4096 -b execve -e trace=!futex,nanosleep,sched_yield /usr/local/bin/agent
